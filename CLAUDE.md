@@ -11,7 +11,7 @@ Board games for a bar table, played in the browser. Designed for phones and touc
 
 Client-only **Vite + React + TypeScript** app with **no backend or server runtime** (the build is a static `dist/` deployed to Vercel). three.js owns the full-screen canvas and the render loop; React is a thin shell around it for HTML overlay UI. Game logic lives in plain TypeScript modules that are independent of rendering so they can be unit tested.
 
-- **`index.html` + `src/main.tsx`**: Vite entry, mounts `<App />` under `StrictMode`, injects Vercel analytics, imports `src/globals.css`. The display face (Fraunces) loads from Google Fonts.
+- **`index.html` + `src/main.tsx`**: Vite entry, mounts `<App />` under `StrictMode`, injects Vercel analytics, imports the self-hosted fonts (Fontsource packages for Fraunces and Chakra Petch) and `src/globals.css`.
 - **`src/App.tsx`**: owns the match (a `useReducer` over `matchReducer`), forwards the table's step/hop/stop intents, runs the computer's turns, and composes the canvas with the overlays.
 - **`src/components/GameCanvas/`**: the three.js table. `index.tsx` builds the scene once in an effect (full cleanup; StrictMode double-invokes effects in dev, so setup is idempotent), handles pointer events, runs the animation loop, and syncs marbles to game state. `scene.ts` (renderer, camera, lights, felt, board, holes, viewport fit), `marbles.ts` (one mesh per piece), `markers.ts` (legal-move rings and the snap target), `picking.ts` (pointer to board plane to nearest hole), `woodTexture.ts` (procedural canvas textures). Props are read through refs so the scene never rebuilds on re-render.
 - **`src/components/Setup/`**: the pre-game card (player count, person or computer per seat). **`src/components/Hud/`**: turn banner, Undo, Stop here (mid-chain), New game.
@@ -25,6 +25,8 @@ Client-only **Vite + React + TypeScript** app with **no backend or server runtim
 - **`src/lib/options/`**: player preferences (`hints`, the move-guidance rings, and `theme`), parsed defensively from localStorage and saved on change. **`src/components/Options/`** is the panel, opened from the Options control at the top right during setup and play.
 - **`src/utils/`**: `clamp`, `smoothstep`, `vibrateIfSupported`.
 
+**Offline and install**: the app is a PWA. `vite-plugin-pwa` (configured in `vite.config.ts`) writes the manifest and a Workbox service worker that precaches every build asset (code, styles, fonts, icons, manifest), with `registerType: "autoUpdate"` so a new deploy takes over on the next open. Nothing the game needs may load from the network at runtime: fonts come from Fontsource packages, textures are generated on the client, and Vercel analytics is the one external script and is allowed to fail. Icons live in `public/icons/` (PNGs rasterized from `icon-maskable.svg`, which keeps the marble inside the maskable safe zone); regenerate them with Quick Look (`qlmanage -t -s 512`) if the artwork changes. The service worker is only emitted by `pnpm build`; test offline behavior against `pnpm start`, not the dev server.
+
 Each module is a directory named after its primary export, containing `index.ts` and optionally `consts.ts`, `types.ts`, and `tests.ts`.
 
 **Turn model**: a turn is one step (ends the turn at once) or a chain of hops. The chain lives in game state (`GameState.chain`): `applyHop` moves the marble and keeps the chain open, `endChain` stops it where it may rest, and a hop with no follow-up ends the turn by itself. A marble may pass through a foreign tip mid-chain but `hopOptions` never offers a landing it could not finish from. `applyMove` plays a whole move at once (how the computer plays) by walking the same functions; its path must be exactly what the marble travels. The match reducer exposes `step`, `hop`, `stop`, and `move`; undo mid-chain takes back one hop, otherwise it rewinds to the start of the last human turn.
@@ -35,7 +37,7 @@ Each module is a directory named after its primary export, containing `index.ts`
 
 - **60 fps on a three-year-old mid-range phone.** The scene is small (one board, 121 instanced holes, up to 60 marbles, one shadow-casting light); keep it that way. No post-processing, no transmission materials.
 - **Touch latency**: the marble must be lifted on the frame of the touch; drags update the mesh directly from the pointer handler, not through React state.
-- **Initial load under ten seconds** on a typical connection. Textures are generated on the client; there are no model or image downloads.
+- **Initial load under ten seconds** on a typical connection. Textures are generated on the client; there are no model or image downloads. The precache is about 1.3 MB; keep an eye on it when adding assets.
 - **No per-frame allocations** in the render loop. Reuse vectors and the motion sample; allocate in setup.
 - **Portrait-first layout**: the board is fit to the viewport width in portrait and to the height on desktop; the HUD sits above and below it. Do not design a separate landscape layout.
 

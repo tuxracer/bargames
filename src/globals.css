@@ -6,7 +6,7 @@
   --accent-dim: rgba(245, 166, 35, 0.45);
   --panel: #171215;
   --panel-edge: #3b2a1f;
-  --font: "Fraunces", Georgia, "Times New Roman", serif;
+  --font: "Fraunces Variable", Georgia, "Times New Roman", serif;
   --heading-weight: 600;
   --heading-tracking: 0;
 }
@@ -20,7 +20,7 @@
   --accent-dim: rgba(25, 230, 255, 0.45);
   --panel: #07070f;
   --panel-edge: #1e2a4a;
-  --font: "Chakra Petch", "Fraunces", sans-serif;
+  --font: "Chakra Petch", "Fraunces Variable", sans-serif;
   --heading-weight: 700;
   --heading-tracking: 0.02em;
 }

@@ -12,11 +12,15 @@ Open it on a phone, drag a marble, and let go over a glowing hole. The board is 
 - Undo takes back your last move (and the computer's reply). No timers, no scores.
 - Options (top right) lets you pick the look of the table, Tavern (wood, felt, lamplight) or Neon (black lacquer, neon tubes, a grid floor), and switch off the rings that show where a lifted marble can go. Both choices are remembered on that device.
 
+## Install it
+
+bargames is a Progressive Web App. Open it once in a browser and add it to your home screen (Share, then "Add to Home Screen" on iOS; the install prompt or the browser menu on Android and desktop). After that it opens full screen like a native app and works with no connection at all: the code, the fonts, and the icons are all cached on first visit, and updates install themselves the next time you open it online.
+
 ## Tech
 
 - [three.js](https://threejs.org/) renders the table; [Vite](https://vite.dev/) + [React](https://react.dev/) + TypeScript wrap it in a thin HTML shell (setup card, turn banner, buttons)
 - The rules live in rendering-free TypeScript under `src/lib` and are unit tested with [vitest](https://vitest.dev/)
-- Static build (`dist/`), hosted on [Vercel](https://vercel.com/)
+- Static build (`dist/`), hosted on [Vercel](https://vercel.com/); [vite-plugin-pwa](https://vite-pwa-org.netlify.app/) generates the manifest and a service worker that precaches the whole build, and the fonts ship with the app via [Fontsource](https://fontsource.org/)
 
 ## Development
 
