@@ -41,6 +41,15 @@ export type Move = {
   readonly path: readonly HoleIndex[];
 };
 
+/**
+ * A hop chain in progress: the marble has left path[0], has landed at the
+ * last entry, and may hop again or stop (if it may rest where it is).
+ */
+export type Chain = {
+  readonly piece: number;
+  readonly path: readonly HoleIndex[];
+};
+
 export type GameState = {
   readonly seats: readonly Seat[];
   readonly pieces: readonly Piece[];
@@ -48,8 +57,14 @@ export type GameState = {
   readonly occupancy: readonly (SeatIndex | null)[];
   readonly current: SeatIndex;
   readonly winner: SeatIndex | null;
+  /** The marble mid-chain for the seat to move, or null between turns. */
+  readonly chain: Chain | null;
+  /**
+   * The most recent travel: the finished move of the last turn, or the
+   * chain so far while one is in progress. What the table animates.
+   */
   readonly lastMove: Move | null;
-  /** Completed moves so far; the HUD's clock. */
+  /** Completed turns so far; the HUD's clock. */
   readonly turn: number;
 };
 
@@ -58,6 +73,7 @@ export type GameErrorCode =
   | "UNKNOWN_PIECE"
   | "NOT_YOUR_TURN"
   | "ILLEGAL_MOVE"
+  | "NO_CHAIN"
   | "GAME_OVER";
 
 export class GameError extends Error {

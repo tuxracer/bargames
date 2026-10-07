@@ -53,6 +53,7 @@ export const createGame = (kinds: readonly SeatKind[]): GameState => {
     occupancy: buildOccupancy(pieces),
     current: 0,
     winner: null,
+    chain: null,
     lastMove: null,
     turn: 0,
   };
@@ -76,56 +77,123 @@ export const pieceById = (state: GameState, pieceId: number): Piece => {
   return piece;
 };
 
+type Occupancy = readonly (SeatIndex | null)[];
+
 /**
- * Every legal move for one marble: single steps to an adjacent empty hole,
- * and chains of hops over any marble into the empty hole directly beyond.
- * Each destination is reported once, by its shortest hop chain.
+ * The single hops available from `from`: over an adjacent marble into the
+ * empty hole directly beyond. The chain's origin counts as empty (the
+ * marble has left it), and holes already visited this chain are off limits.
  */
-export const legalMovesFor = (state: GameState, pieceId: number): Move[] => {
-  const piece = pieceById(state, pieceId);
-  const seat = state.seats[piece.seat];
-  const { occupancy } = state;
-  const from = piece.hole;
-  const moves: Move[] = [];
-
+const singleHops = (
+  occupancy: Occupancy,
+  origin: HoleIndex,
+  from: HoleIndex,
+  visited: ReadonlySet<HoleIndex>,
+): HoleIndex[] => {
+  const landings: HoleIndex[] = [];
   for (let direction = 0; direction < CUBE_DIRECTIONS.length; direction += 1) {
-    const next = NEIGHBORS[from][direction];
-    if (next !== -1 && occupancy[next] === null && canRest(seat, next)) {
-      moves.push({ piece: pieceId, path: [from, next] });
-    }
+    const over = NEIGHBORS[from][direction];
+    if (over === -1 || over === origin || occupancy[over] === null) continue;
+    const landing = NEIGHBORS[over][direction];
+    if (landing === -1 || visited.has(landing)) continue;
+    if (occupancy[landing] !== null && landing !== origin) continue;
+    landings.push(landing);
   }
+  return landings;
+};
 
-  // Breadth-first over hop landings. The origin counts as empty: the marble
-  // has left it, so it can neither be hopped over nor landed on again.
-  const parent = new Map<HoleIndex, HoleIndex>([[from, -1]]);
-  const queue: HoleIndex[] = [from];
+/** Breadth-first over hop landings from `start`; maps landing to parent. */
+const hopTree = (
+  occupancy: Occupancy,
+  origin: HoleIndex,
+  start: HoleIndex,
+  visited: ReadonlySet<HoleIndex>,
+): Map<HoleIndex, HoleIndex> => {
+  const parent = new Map<HoleIndex, HoleIndex>([[start, -1]]);
+  const seen = new Set(visited);
+  seen.add(start);
+  const queue: HoleIndex[] = [start];
   for (let head = 0; head < queue.length; head += 1) {
     const here = queue[head];
-    for (
-      let direction = 0;
-      direction < CUBE_DIRECTIONS.length;
-      direction += 1
-    ) {
-      const over = NEIGHBORS[here][direction];
-      if (over === -1 || over === from || occupancy[over] === null) continue;
-      const landing = NEIGHBORS[over][direction];
-      if (landing === -1 || occupancy[landing] !== null) continue;
-      if (parent.has(landing)) continue;
+    for (const landing of singleHops(occupancy, origin, here, seen)) {
+      seen.add(landing);
       parent.set(landing, here);
       queue.push(landing);
     }
   }
+  parent.delete(start);
+  return parent;
+};
 
-  for (const landing of queue) {
-    if (landing === from || !canRest(seat, landing)) continue;
+/** Whether a marble at `hole` could still end its chain somewhere legal. */
+const canFinishFrom = (
+  seat: Seat,
+  occupancy: Occupancy,
+  origin: HoleIndex,
+  hole: HoleIndex,
+  visited: ReadonlySet<HoleIndex>,
+): boolean => {
+  if (canRest(seat, hole)) return true;
+  for (const landing of hopTree(occupancy, origin, hole, visited).keys()) {
+    if (canRest(seat, landing)) return true;
+  }
+  return false;
+};
+
+/** Adjacent empty holes a marble may step into. A step ends the turn. */
+export const stepOptions = (state: GameState, pieceId: number): HoleIndex[] => {
+  const piece = pieceById(state, pieceId);
+  const seat = state.seats[piece.seat];
+  const steps: HoleIndex[] = [];
+  for (const next of NEIGHBORS[piece.hole]) {
+    if (next !== -1 && state.occupancy[next] === null && canRest(seat, next)) {
+      steps.push(next);
+    }
+  }
+  return steps;
+};
+
+/**
+ * Where a marble may hop next: from its chain's end if one is in progress,
+ * otherwise from where it sits. Landings a marble could never finish from
+ * (a foreign tip with no way out) are left off.
+ */
+export const hopOptions = (state: GameState, pieceId: number): HoleIndex[] => {
+  const piece = pieceById(state, pieceId);
+  const seat = state.seats[piece.seat];
+  const chain = state.chain?.piece === pieceId ? state.chain : null;
+  const origin = chain ? chain.path[0] : piece.hole;
+  const visited = new Set<HoleIndex>(chain ? chain.path : [piece.hole]);
+  const landings = singleHops(state.occupancy, origin, piece.hole, visited);
+  return landings.filter((landing) => {
+    const onward = new Set(visited);
+    onward.add(landing);
+    return canFinishFrom(seat, state.occupancy, origin, landing, onward);
+  });
+};
+
+/**
+ * Every complete move for one marble: single steps, and hop chains to each
+ * reachable resting hole by its shortest path. The computer's menu.
+ */
+export const legalMovesFor = (state: GameState, pieceId: number): Move[] => {
+  const piece = pieceById(state, pieceId);
+  const seat = state.seats[piece.seat];
+  const from = piece.hole;
+  const moves: Move[] = stepOptions(state, pieceId).map((next) => ({
+    piece: pieceId,
+    path: [from, next],
+  }));
+  const tree = hopTree(state.occupancy, from, from, new Set([from]));
+  for (const landing of tree.keys()) {
+    if (!canRest(seat, landing)) continue;
     const path: HoleIndex[] = [];
-    for (let hole = landing; hole !== -1; hole = parent.get(hole) ?? -1) {
+    for (let hole = landing; hole !== -1; hole = tree.get(hole) ?? -1) {
       path.push(hole);
     }
     path.reverse();
     moves.push({ piece: pieceId, path });
   }
-
   return moves;
 };
 
@@ -148,9 +216,6 @@ export const hasWon = (state: GameState, seat: SeatIndex): boolean => {
   );
 };
 
-const destinationOf = (move: Move): HoleIndex =>
-  move.path[move.path.length - 1];
-
 /** The seat after `seat` with at least one legal move, or null if none. */
 const nextSeatWithMoves = (
   state: GameState,
@@ -166,44 +231,117 @@ const nextSeatWithMoves = (
   return null;
 };
 
-/**
- * Plays a move for the seat whose turn it is. The move is matched to a legal
- * move by its destination, so callers may hand back a move they were given
- * or just the start and end of a drag.
- */
-export const applyMove = (state: GameState, move: Move): GameState => {
-  if (state.winner !== null) {
-    throw new GameError("GAME_OVER");
-  }
-  const piece = pieceById(state, move.piece);
-  if (piece.seat !== state.current) {
-    throw new GameError("NOT_YOUR_TURN");
-  }
-  const destination = destinationOf(move);
-  const legal = legalMovesFor(state, move.piece).find(
-    (candidate) => destinationOf(candidate) === destination,
-  );
-  if (legal === undefined) {
-    throw new GameError("ILLEGAL_MOVE");
-  }
-
+const relocate = (
+  state: GameState,
+  piece: Piece,
+  hole: HoleIndex,
+): Pick<GameState, "pieces" | "occupancy"> => {
   const pieces = state.pieces.map((candidate) =>
-    candidate.id === piece.id ? { ...candidate, hole: destination } : candidate,
+    candidate.id === piece.id ? { ...candidate, hole } : candidate,
   );
   const occupancy = state.occupancy.slice();
   occupancy[piece.hole] = null;
-  occupancy[destination] = piece.seat;
+  occupancy[hole] = piece.seat;
+  return { pieces, occupancy };
+};
 
-  const moved: GameState = {
-    ...state,
-    pieces,
-    occupancy,
-    lastMove: legal,
-    turn: state.turn + 1,
-  };
-  if (hasWon(moved, state.current)) {
-    return { ...moved, winner: state.current };
+const finishTurn = (state: GameState): GameState => {
+  const done: GameState = { ...state, chain: null, turn: state.turn + 1 };
+  if (hasWon(done, state.current)) {
+    return { ...done, winner: state.current };
   }
-  const next = nextSeatWithMoves(moved, state.current);
-  return { ...moved, current: next ?? state.current };
+  const next = nextSeatWithMoves(done, state.current);
+  return { ...done, current: next ?? state.current };
+};
+
+const assertMayAct = (state: GameState, piece: Piece) => {
+  if (state.winner !== null) throw new GameError("GAME_OVER");
+  if (piece.seat !== state.current) throw new GameError("NOT_YOUR_TURN");
+};
+
+/** Step one marble into an adjacent hole. The turn ends at once. */
+export const applyStep = (
+  state: GameState,
+  pieceId: number,
+  hole: HoleIndex,
+): GameState => {
+  const piece = pieceById(state, pieceId);
+  assertMayAct(state, piece);
+  if (state.chain !== null || !stepOptions(state, pieceId).includes(hole)) {
+    throw new GameError("ILLEGAL_MOVE");
+  }
+  return finishTurn({
+    ...state,
+    ...relocate(state, piece, hole),
+    lastMove: { piece: pieceId, path: [piece.hole, hole] },
+  });
+};
+
+/**
+ * Hop one marble over a neighbor. The chain stays open for another hop,
+ * unless none is possible, in which case the turn ends where it landed.
+ */
+export const applyHop = (
+  state: GameState,
+  pieceId: number,
+  hole: HoleIndex,
+): GameState => {
+  const piece = pieceById(state, pieceId);
+  assertMayAct(state, piece);
+  if (state.chain !== null && state.chain.piece !== pieceId) {
+    throw new GameError("ILLEGAL_MOVE");
+  }
+  if (!hopOptions(state, pieceId).includes(hole)) {
+    throw new GameError("ILLEGAL_MOVE");
+  }
+  const path = [...(state.chain?.path ?? [piece.hole]), hole];
+  const chain = { piece: pieceId, path };
+  const landed: GameState = {
+    ...state,
+    ...relocate(state, piece, hole),
+    chain,
+    lastMove: chain,
+  };
+  return hopOptions(landed, pieceId).length === 0 ? finishTurn(landed) : landed;
+};
+
+/** End the chain in progress where the marble sits, if it may rest there. */
+export const endChain = (state: GameState): GameState => {
+  if (state.winner !== null) throw new GameError("GAME_OVER");
+  if (state.chain === null) throw new GameError("NO_CHAIN");
+  const piece = pieceById(state, state.chain.piece);
+  if (!canRest(state.seats[piece.seat], piece.hole)) {
+    throw new GameError("ILLEGAL_MOVE");
+  }
+  return finishTurn(state);
+};
+
+/** Whether the chain in progress may stop where its marble now sits. */
+export const canStop = (state: GameState): boolean => {
+  if (state.chain === null || state.winner !== null) return false;
+  const piece = pieceById(state, state.chain.piece);
+  return canRest(state.seats[piece.seat], piece.hole);
+};
+
+/**
+ * Plays a whole move at once: a single step, or every hop of a chain and
+ * then the stop. The path must be exactly what the marble travels.
+ */
+export const applyMove = (state: GameState, move: Move): GameState => {
+  const { piece, path } = move;
+  if (path.length < 2) throw new GameError("ILLEGAL_MOVE");
+  if (state.chain !== null) throw new GameError("ILLEGAL_MOVE");
+  const from = path[0];
+  if (pieceById(state, piece).hole !== from) {
+    throw new GameError("ILLEGAL_MOVE");
+  }
+  if (path.length === 2 && NEIGHBORS[from].includes(path[1])) {
+    return applyStep(state, piece, path[1]);
+  }
+  let next = state;
+  for (let leg = 1; leg < path.length; leg += 1) {
+    if (next.chain === null && leg > 1) throw new GameError("ILLEGAL_MOVE");
+    next = applyHop(next, piece, path[leg]);
+  }
+  return next.chain === null ? next : endChain(next);
 };

@@ -1,8 +1,9 @@
 import { useEffect, useRef } from "react";
 import { Vector3 } from "three";
 import { HOLES } from "@/lib/board";
-import { legalMovesFor } from "@/lib/game";
-import type { GameState, Move } from "@/lib/game";
+import type { HoleIndex } from "@/lib/board";
+import { canStop, hopOptions, stepOptions } from "@/lib/game";
+import type { GameState } from "@/lib/game";
 import {
   createMotionSample,
   HOP_LIFT,
@@ -36,7 +37,12 @@ type GameCanvasProps = {
   state: GameState;
   /** True when the seat to move is a person at this screen. */
   interactive: boolean;
-  onMove: (move: Move) => void;
+  /** The player stepped a marble into an adjacent hole; the turn ends. */
+  onStep: (piece: number, hole: HoleIndex) => void;
+  /** The player hopped a marble; the chain stays open if it can. */
+  onHop: (piece: number, hole: HoleIndex) => void;
+  /** The player set the chain marble down where it is. */
+  onStop: () => void;
   /** Fires once the board has finished showing the latest state. */
   onSettled: () => void;
 };
@@ -54,9 +60,11 @@ type Flight = {
 
 type Selection = {
   readonly pieceId: number;
-  readonly origin: number;
-  readonly moves: readonly Move[];
-  readonly destinations: readonly number[];
+  /** Where the marble sits now: the chain's end, or its hole. */
+  readonly origin: HoleIndex;
+  readonly steps: readonly HoleIndex[];
+  readonly hops: readonly HoleIndex[];
+  readonly destinations: readonly HoleIndex[];
 };
 
 type Press = {
@@ -64,12 +72,12 @@ type Press = {
   readonly pieceId: number;
   readonly startX: number;
   readonly startY: number;
-  /** Tapping an already-selected marble puts it back down. */
+  /** Tapping an already-selected marble puts it down (or stops a chain). */
   readonly toggleOff: boolean;
   dragging: boolean;
   dragX: number;
   dragZ: number;
-  snap: number | null;
+  snap: HoleIndex | null;
 };
 
 type Rig = {
@@ -90,37 +98,59 @@ const RETURN_LIFT = 0.2;
 const BOB_AMOUNT = 0.04;
 const BOB_PERIOD_MS = 1_400;
 
-const holePoint = (hole: number): Point2 => ({
+const holePoint = (hole: HoleIndex): Point2 => ({
   x: HOLES[hole].px,
   y: HOLES[hole].py,
 });
 
-const destinationOf = (move: Move) => move.path[move.path.length - 1];
+/**
+ * Whether `next` continues `previous` forward (a turn played or a hop
+ * added) rather than rewinding it or starting over. Only forward travel is
+ * animated; everything else snaps into place.
+ */
+const isForward = (previous: GameState | null, next: GameState): boolean => {
+  if (previous === null || previous.seats !== next.seats) return false;
+  if (next.turn > previous.turn) return true;
+  if (next.turn < previous.turn) return false;
+  const before = previous.chain?.path.length ?? 0;
+  const after = next.chain?.path.length ?? 0;
+  return after > before;
+};
 
 /**
  * The table: a tilted 2.5D view of the board, with the marbles as the only
  * things that move. Drag a marble and let go over a glowing hole, or tap it
- * and tap where it should land.
+ * and tap where it should land. After a hop the marble stays up, ringed by
+ * its next hops; tap it to set it down.
  */
 export const GameCanvas = ({
   state,
   interactive,
-  onMove,
+  onStep,
+  onHop,
+  onStop,
   onSettled,
 }: GameCanvasProps) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const rigRef = useRef<Rig | null>(null);
   const stateRef = useRef(state);
+  const previousStateRef = useRef<GameState | null>(null);
   const interactiveRef = useRef(interactive);
-  const onMoveRef = useRef(onMove);
+  const onStepRef = useRef(onStep);
+  const onHopRef = useRef(onHop);
+  const onStopRef = useRef(onStop);
   const onSettledRef = useRef(onSettled);
+  const selectRef = useRef<(pieceId: number) => void>(() => {});
+
   // Event handlers and the frame loop read the latest props through refs,
   // so the scene is built once and never torn down on a re-render.
   useEffect(() => {
     stateRef.current = state;
     interactiveRef.current = interactive;
-    onMoveRef.current = onMove;
+    onStepRef.current = onStep;
+    onHopRef.current = onHop;
+    onStopRef.current = onStop;
     onSettledRef.current = onSettled;
   });
 
@@ -159,19 +189,22 @@ export const GameCanvas = ({
     const select = (pieceId: number) => {
       clearSelection();
       const current = stateRef.current;
-      const moves = legalMovesFor(current, pieceId);
-      const origin = current.pieces[pieceId].hole;
+      const inChain = current.chain !== null;
+      const steps = inChain ? [] : stepOptions(current, pieceId);
+      const hops = hopOptions(current, pieceId);
       rig.selection = {
         pieceId,
-        origin,
-        moves,
-        destinations: moves.map(destinationOf),
+        origin: current.pieces[pieceId].hole,
+        steps,
+        hops,
+        destinations: [...steps, ...hops],
       };
       const color = MARBLE_LOOKS[current.seats[current.current].zone].hex;
       rig.markers.show(rig.selection.destinations, color);
       const marble = marbleOf(pieceId);
       if (marble) rig.marbles.setGlow(marble, 1);
     };
+    selectRef.current = select;
 
     const startFlight = (
       marble: Marble,
@@ -191,9 +224,27 @@ export const GameCanvas = ({
       };
     };
 
-    const commit = (move: Move) => {
+    /** Send the selected marble to a ringed hole. */
+    const commit = (hole: HoleIndex) => {
+      const selection = rig.selection;
+      if (!selection) return;
+      const isStep = selection.steps.includes(hole);
       clearSelection();
-      onMoveRef.current(move);
+      if (isStep) onStepRef.current(selection.pieceId, hole);
+      else onHopRef.current(selection.pieceId, hole);
+    };
+
+    /** Tapping the marble itself: put it down, or stop its chain. */
+    const settle = () => {
+      const current = stateRef.current;
+      if (current.chain === null) {
+        clearSelection();
+        return;
+      }
+      if (canStop(current)) {
+        clearSelection();
+        onStopRef.current();
+      }
     };
 
     const returnHome = (press: Press) => {
@@ -214,12 +265,15 @@ export const GameCanvas = ({
       if (!rig.picker.pointToBoard(event.clientX, event.clientY, hit)) return;
       const current = stateRef.current;
       const hole = rig.picker.nearestHole(hit.x, hit.z, PICK_RADIUS);
+      const chain = current.chain;
 
       if (hole !== -1 && current.occupancy[hole] === current.current) {
         const piece = current.pieces.find(
           (candidate) => candidate.hole === hole,
         );
         if (!piece) return;
+        // Mid-chain only the chain's marble is in play.
+        if (chain && chain.piece !== piece.id) return;
         const toggleOff = rig.selection?.pieceId === piece.id;
         if (!toggleOff) select(piece.id);
         rig.press = {
@@ -246,13 +300,11 @@ export const GameCanvas = ({
       const selection = rig.selection;
       if (!selection) return;
       if (hole !== -1 && selection.destinations.includes(hole)) {
-        const move = selection.moves.find(
-          (candidate) => destinationOf(candidate) === hole,
-        );
-        if (move) commit(move);
+        commit(hole);
         return;
       }
-      clearSelection();
+      // A stray tap puts a free marble down; a chain marble stays in play.
+      if (chain === null) clearSelection();
     };
 
     const onPointerMove = (event: PointerEvent) => {
@@ -299,24 +351,18 @@ export const GameCanvas = ({
         canvas.releasePointerCapture(event.pointerId);
       }
       if (!press.dragging) {
-        if (press.toggleOff) clearSelection();
+        if (press.toggleOff) settle();
         return;
       }
       rig.markers.setTarget(null);
-      const selection = rig.selection;
-      if (!cancelled && press.snap !== null && selection) {
-        const move = selection.moves.find(
-          (candidate) => destinationOf(candidate) === press.snap,
-        );
-        if (move) {
-          rig.pendingDrop = {
-            pieceId: press.pieceId,
-            x: press.dragX,
-            z: press.dragZ,
-          };
-          commit(move);
-          return;
-        }
+      if (!cancelled && press.snap !== null && rig.selection) {
+        rig.pendingDrop = {
+          pieceId: press.pieceId,
+          x: press.dragX,
+          z: press.dragZ,
+        };
+        commit(press.snap);
+        return;
       }
       returnHome(press);
     };
@@ -389,11 +435,14 @@ export const GameCanvas = ({
   }, []);
 
   // Bring the table in line with the game: new marbles appear at rest, the
-  // marble that just moved flies there, anything else (an undo, a new game)
-  // simply snaps into place.
+  // marble that just traveled flies the legs it has not yet shown, and
+  // anything else (an undo, a new game) simply snaps into place. A chain
+  // left open for a person is picked straight back up.
   useEffect(() => {
     const rig = rigRef.current;
     if (!rig) return;
+    const previous = previousStateRef.current;
+    previousStateRef.current = state;
     rig.flight = null;
     rig.press = null;
     rig.selection = null;
@@ -405,22 +454,31 @@ export const GameCanvas = ({
 
     const drop = rig.pendingDrop;
     rig.pendingDrop = null;
+    const forward = isForward(previous, state);
+    const settled = () => {
+      if (stateRef.current !== state) return;
+      const chain = state.chain;
+      if (chain && interactive) selectRef.current(chain.piece);
+      onSettledRef.current();
+    };
+
     let animated = false;
     for (const piece of state.pieces) {
       const marble = rig.marbles.byPiece.get(piece.id);
       if (!marble || marble.hole === piece.hole) continue;
       const lastMove = state.lastMove;
-      if (lastMove && lastMove.piece === piece.id) {
+      const shown = lastMove ? lastMove.path.indexOf(marble.hole) : -1;
+      if (forward && lastMove && lastMove.piece === piece.id && shown >= 0) {
         const land = () => {
           marble.hole = piece.hole;
           rig.marbles.rest(marble, piece.hole);
           vibrateIfSupported(LAND_HAPTIC_MS);
-          onSettledRef.current();
+          settled();
         };
         const fromDrag = drop && drop.pieceId === piece.id;
         const points = fromDrag
           ? [{ x: drop.x, y: drop.z }, holePoint(piece.hole)]
-          : lastMove.path.map(holePoint);
+          : lastMove.path.slice(shown).map(holePoint);
         rig.flight = {
           marble,
           points,
@@ -435,8 +493,8 @@ export const GameCanvas = ({
         rig.marbles.rest(marble, piece.hole);
       }
     }
-    if (!animated) onSettledRef.current();
-  }, [state]);
+    if (!animated) settled();
+  }, [state, interactive]);
 
   return (
     <div ref={containerRef} className="game-canvas">

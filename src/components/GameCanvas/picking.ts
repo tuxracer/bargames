@@ -1,10 +1,10 @@
 import { Plane, Raycaster, Vector2, Vector3 } from "three";
 import type { Camera } from "three";
 import { HOLES } from "@/lib/board";
-import { BOARD_TOP } from "./consts";
+import { MARBLE_REST_Y } from "./consts";
 
 export type Picker = {
-  /** Where a pointer (client px) hits the board plane; false if it misses. */
+  /** Where a pointer (client px) hits the marble plane; false if it misses. */
   pointToBoard: (clientX: number, clientY: number, out: Vector3) => boolean;
   /** The closest hole to a board-plane point, or -1 if none is in range. */
   nearestHole: (x: number, z: number, radius: number) => number;
@@ -25,7 +25,9 @@ export const createPicker = (
 ): Picker => {
   const raycaster = new Raycaster();
   const ndc = new Vector2();
-  const plane = new Plane(new Vector3(0, 1, 0), -BOARD_TOP);
+  // Pick at marble height, not the board top: with the camera tilted, a tap
+  // on a marble's visible center would otherwise land beyond its hole.
+  const plane = new Plane(new Vector3(0, 1, 0), -MARBLE_REST_Y);
   let rect = canvas.getBoundingClientRect();
 
   const measure = () => {

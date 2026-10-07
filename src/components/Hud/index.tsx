@@ -1,3 +1,4 @@
+import { canStop } from "@/lib/game";
 import type { GameState } from "@/lib/game";
 import { MARBLE_LOOKS } from "@/lib/palette";
 
@@ -5,6 +6,7 @@ type HudProps = {
   game: GameState;
   canUndo: boolean;
   onUndo: () => void;
+  onStop: () => void;
   onPlayAgain: () => void;
   onNewGame: () => void;
 };
@@ -19,20 +21,25 @@ const statusLine = (game: GameState): string => {
   const seat = game.seats[game.current];
   const name = MARBLE_LOOKS[seat.zone].name;
   if (seat.kind === "computer") return `${name} is thinking`;
+  if (game.chain !== null) {
+    return canStop(game) ? "Hop again, or stop here" : "Keep hopping";
+  }
   return humans === 1 ? "Your move" : `${name}, your move`;
 };
 
-/** Whose turn it is, and the two things you can do besides play. */
+/** Whose turn it is, and the few things you can do besides play. */
 export const Hud = ({
   game,
   canUndo,
   onUndo,
+  onStop,
   onPlayAgain,
   onNewGame,
 }: HudProps) => {
   const over = game.winner !== null;
   const seat = game.seats[over ? (game.winner as number) : game.current];
   const look = MARBLE_LOOKS[seat.zone];
+  const midChain = !over && game.chain !== null;
 
   return (
     <>
@@ -60,6 +67,16 @@ export const Hud = ({
             onClick={onUndo}
           >
             Undo
+          </button>
+        )}
+        {midChain && (
+          <button
+            type="button"
+            className="button button-primary"
+            disabled={!canStop(game)}
+            onClick={onStop}
+          >
+            Stop here
           </button>
         )}
         <button type="button" className="button" onClick={onNewGame}>

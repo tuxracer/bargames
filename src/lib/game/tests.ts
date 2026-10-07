@@ -2,14 +2,20 @@ import { describe, expect, it } from "vitest";
 import { holeAt, HOLES, NEIGHBORS, ZONE_APEX, ZONE_HOLES } from "@/lib/board";
 import type { HoleIndex } from "@/lib/board";
 import {
+  applyHop,
   applyMove,
+  applyStep,
   canRest,
+  canStop,
   createGame,
+  endChain,
   GameError,
   hasWon,
+  hopOptions,
   isGameError,
   legalMovesFor,
   legalMovesForSeat,
+  stepOptions,
 } from ".";
 import type { GameState, Move } from "./types";
 
@@ -168,8 +174,9 @@ describe("applyMove", () => {
     expect(game.pieces[move.piece].hole).toBe(move.path[0]);
   });
 
-  it("accepts a move described only by its start and end", () => {
+  it("insists on the full path of a chain, not just its ends", () => {
     const from = holeAt({ x: 0, y: 0, z: 0 });
+    const middle = holeAt({ x: 2, y: -2, z: 0 });
     const far = holeAt({ x: 4, y: -4, z: 0 });
     const game = customGame([
       { seat: 0, holes: [from] },
@@ -178,9 +185,13 @@ describe("applyMove", () => {
         holes: [holeAt({ x: 1, y: -1, z: 0 }), holeAt({ x: 3, y: -3, z: 0 })],
       },
     ]);
-    const next = applyMove(game, { piece: 0, path: [from, far] });
-    expect(next.lastMove?.path).toHaveLength(3);
+    expect(() => applyMove(game, { piece: 0, path: [from, far] })).toThrow(
+      "ILLEGAL_MOVE",
+    );
+    const next = applyMove(game, { piece: 0, path: [from, middle, far] });
     expect(next.pieces[0].hole).toBe(far);
+    expect(next.chain).toBeNull();
+    expect(next.current).toBe(1);
   });
 
   it("rejects moves out of turn and illegal destinations", () => {
@@ -230,5 +241,94 @@ describe("applyMove", () => {
     const mine = legalMovesFor(game, game.pieces.length - 2)[0];
     const next = applyMove(game, { ...mine, piece: mine.piece });
     expect(next.current).toBe(0);
+  });
+});
+
+describe("hop by hop", () => {
+  const from = holeAt({ x: 0, y: 0, z: 0 });
+  const over1 = holeAt({ x: 1, y: -1, z: 0 });
+  const land1 = holeAt({ x: 2, y: -2, z: 0 });
+  const over2 = holeAt({ x: 3, y: -3, z: 0 });
+  const land2 = holeAt({ x: 4, y: -4, z: 0 });
+  const ladder = () =>
+    customGame([
+      { seat: 0, holes: [from] },
+      { seat: 1, holes: [over1, over2] },
+    ]);
+
+  it("offers steps and first hops before a chain starts", () => {
+    const game = ladder();
+    expect(stepOptions(game, 0)).toHaveLength(5);
+    expect(hopOptions(game, 0)).toEqual([land1]);
+  });
+
+  it("keeps the chain open while another hop remains", () => {
+    const game = ladder();
+    const mid = applyHop(game, 0, land1);
+    expect(mid.chain).toEqual({ piece: 0, path: [from, land1] });
+    expect(mid.current).toBe(0);
+    expect(mid.turn).toBe(0);
+    expect(mid.pieces[0].hole).toBe(land1);
+    expect(mid.occupancy[from]).toBeNull();
+    expect(hopOptions(mid, 0)).toEqual([land2]);
+    expect(stepOptions(mid, 0).length).toBeGreaterThan(0);
+    expect(() => applyStep(mid, 0, NEIGHBORS[land1][0])).toThrow(
+      "ILLEGAL_MOVE",
+    );
+  });
+
+  it("lets the player stop mid-chain on a hole they may rest in", () => {
+    const mid = applyHop(ladder(), 0, land1);
+    expect(canStop(mid)).toBe(true);
+    const done = endChain(mid);
+    expect(done.chain).toBeNull();
+    expect(done.current).toBe(1);
+    expect(done.turn).toBe(1);
+    expect(done.lastMove).toEqual({ piece: 0, path: [from, land1] });
+  });
+
+  it("ends the turn on its own when no hop remains", () => {
+    const mid = applyHop(ladder(), 0, land1);
+    const done = applyHop(mid, 0, land2);
+    expect(done.chain).toBeNull();
+    expect(done.current).toBe(1);
+    expect(done.lastMove?.path).toEqual([from, land1, land2]);
+  });
+
+  it("never hops back to a hole already visited this chain", () => {
+    // From land1 the marble could hop back over over1 to `from`; it may not.
+    const mid = applyHop(ladder(), 0, land1);
+    expect(hopOptions(mid, 0)).not.toContain(from);
+  });
+
+  it("will not land in a foreign tip it could never leave, nor stop in one", () => {
+    // Seat 0 (home S, goal N) next to the NE tip's edge, with a marble to
+    // hop over into NE and nothing beyond to hop out again.
+    const start = holeAt({ x: 3, y: -4, z: 1 });
+    const over = holeAt({ x: 4, y: -4, z: 0 });
+    const inNe = holeAt({ x: 5, y: -4, z: -1 });
+    const game = customGame([
+      { seat: 0, holes: [start] },
+      { seat: 1, holes: [over] },
+    ]);
+    expect(hopOptions(game, 0)).not.toContain(inNe);
+
+    // Give it a way out: a second marble to hop over, back into the hexagon.
+    const over2 = holeAt({ x: 4, y: -3, z: -1 });
+    const out = holeAt({ x: 3, y: -2, z: -1 });
+    const withExit = customGame([
+      { seat: 0, holes: [start] },
+      { seat: 1, holes: [over, over2] },
+    ]);
+    expect(hopOptions(withExit, 0)).toContain(inNe);
+    const inside = applyHop(withExit, 0, inNe);
+    expect(inside.chain).not.toBeNull();
+    expect(canStop(inside)).toBe(false);
+    expect(() => endChain(inside)).toThrow("ILLEGAL_MOVE");
+    expect(hopOptions(inside, 0)).toContain(out);
+  });
+
+  it("refuses to end a chain that does not exist", () => {
+    expect(() => endChain(ladder())).toThrow("NO_CHAIN");
   });
 });

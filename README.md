@@ -7,7 +7,7 @@ Open it on a phone, drag a marble, and let go over a glowing hole. The board is 
 ## Chinese Checkers
 
 - Two, three, four, or six players. Any seat can be a person or the computer, so you can play alone, pass the phone around, or watch two computers go at it.
-- Drag a marble and drop it on a highlighted hole, or tap the marble and then tap where it should land. Hops along a chain replay hole by hole.
+- Drag a marble and drop it on a highlighted hole, or tap the marble and then tap where it should land. After a hop the marble stays up with its next hops ringed: hop again, or tap it (or Stop here) to set it down. When no hop remains, the turn ends on its own.
 - Standard rules: step to an adjacent empty hole, or hop over any marble into the empty hole directly beyond, as many times in a row as the board allows. A marble may pass through another seat's tip but may not come to rest there. First player to fill the opposite tip wins.
 - Undo takes back your last move (and the computer's reply). No timers, no scores.
 
