@@ -267,8 +267,11 @@ export const GameCanvas = ({
         press.dragging = true;
       }
       if (!rig.picker.pointToBoard(event.clientX, event.clientY, hit)) return;
+      // A fingertip hides what is under it, so a touch-dragged marble rides
+      // ahead of the finger. A mouse cursor hides nothing: drop it dead on.
+      const ahead = event.pointerType === "touch" ? DRAG_FINGER_OFFSET : 0;
       let x = hit.x;
-      let z = hit.z - DRAG_FINGER_OFFSET;
+      let z = hit.z - ahead;
       const reach = Math.hypot(x, z);
       if (reach > BOARD_DISC_RADIUS) {
         x *= BOARD_DISC_RADIUS / reach;

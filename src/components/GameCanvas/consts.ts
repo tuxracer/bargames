@@ -12,7 +12,8 @@ export const MARBLE_REST_Y = BOARD_TOP + MARBLE_RADIUS - MARBLE_SINK;
 /** Lift while selected (bobbing) and while being dragged. */
 export const SELECT_LIFT = 0.28;
 export const DRAG_LIFT = 0.9;
-/** The dragged marble rides ahead of the fingertip so it stays visible. */
+/** A touch-dragged marble rides this far ahead of the fingertip so it stays
+ * visible; mouse drags get no offset. */
 export const DRAG_FINGER_OFFSET = 0.7;
 
 /** How far a marble may be from a hole center and still snap into it. */
