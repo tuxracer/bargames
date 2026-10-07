@@ -1,8 +1,10 @@
+import type { MusicStatus } from "@/components/GameCanvas";
 import type { Options } from "@/lib/options";
 import { THEME_LIST } from "@/lib/theme";
 
 type OptionsPanelProps = {
   options: Options;
+  musicStatus: MusicStatus;
   onChange: (options: Options) => void;
   onClose: () => void;
 };
@@ -32,8 +34,17 @@ const Toggle = ({ label, detail, checked, onToggle }: ToggleProps) => (
 );
 
 /** Preferences that outlive a game. Opens over whatever is on the table. */
+const MUSIC_STATUS_LINES: Readonly<Record<MusicStatus, string | null>> = {
+  off: null,
+  starting: "Asking for the microphone",
+  listening: "Listening",
+  denied: "Microphone blocked. Allow it in your browser's site settings.",
+  unsupported: "This browser cannot use the microphone.",
+};
+
 export const OptionsPanel = ({
   options,
+  musicStatus,
   onChange,
   onClose,
 }: OptionsPanelProps) => (
@@ -80,6 +91,23 @@ export const OptionsPanel = ({
         checked={options.hints}
         onToggle={() => onChange({ ...options, hints: !options.hints })}
       />
+      <Toggle
+        label="React to music"
+        detail="Listens through the microphone and lights the table to the beat. Nothing is recorded or sent anywhere."
+        checked={options.music}
+        onToggle={() => onChange({ ...options, music: !options.music })}
+      />
+      {MUSIC_STATUS_LINES[musicStatus] && (
+        <p
+          className={
+            musicStatus === "listening"
+              ? "music-status music-status-live"
+              : "music-status"
+          }
+        >
+          {MUSIC_STATUS_LINES[musicStatus]}
+        </p>
+      )}
       <button type="button" className="button button-primary" onClick={onClose}>
         Done
       </button>

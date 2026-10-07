@@ -26,9 +26,14 @@ export const parseOptions = (raw: string | null): Options => {
 };
 
 const pickKnown = (record: Record<string, unknown>): Partial<Options> => {
-  const known: { hints?: boolean; theme?: Options["theme"] } = {};
+  const known: {
+    hints?: boolean;
+    theme?: Options["theme"];
+    music?: boolean;
+  } = {};
   if (isBoolean(record.hints)) known.hints = record.hints;
   if (isThemeId(record.theme)) known.theme = record.theme;
+  if (isBoolean(record.music)) known.music = record.music;
   return known;
 };
 

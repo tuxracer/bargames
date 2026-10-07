@@ -18,6 +18,15 @@ const TAVERN: Theme = {
     marbleGlow: 0,
     markerLighten: 0.25,
   },
+  music: {
+    marbleGlow: 0.7,
+    whiten: 0.35,
+    halo: 0.5,
+    swell: 0.08,
+    rimPulse: 0,
+    gridPulse: 0,
+    keyPulse: 0.35,
+  },
   marbles: {
     S: { name: "Amber", hex: 0xf08a14, css: "#f5a623", roughness: 0.1 },
     N: { name: "Emerald", hex: 0x14b062, css: "#27c47a", roughness: 0.1 },
@@ -45,6 +54,15 @@ const NEON: Theme = {
     exposure: 0.95,
     marbleGlow: 0.5,
     markerLighten: 0,
+  },
+  music: {
+    marbleGlow: 1.3,
+    whiten: 0.5,
+    halo: 1,
+    swell: 0.12,
+    rimPulse: 1.6,
+    gridPulse: 0.9,
+    keyPulse: 0,
   },
   marbles: {
     S: { name: "Cyan", hex: 0x19e6ff, css: "#19e6ff", roughness: 0.12 },

@@ -50,6 +50,15 @@ export type SceneHandle = {
   readonly renderer: WebGLRenderer;
   readonly scene: Scene;
   readonly camera: PerspectiveCamera;
+  /** The parts music is allowed to move, with their resting values. */
+  readonly pulse: {
+    readonly key: DirectionalLight;
+    readonly keyIntensity: number;
+    readonly rim: MeshStandardMaterial;
+    readonly rimIntensity: number;
+    readonly table: MeshStandardMaterial;
+    readonly tableIntensity: number;
+  };
   /** Resize the drawing buffer and refit the board into the viewport. */
   resize: (width: number, height: number) => void;
   dispose: () => void;
@@ -179,15 +188,16 @@ export const createScene = (
   board.castShadow = true;
   scene.add(board);
 
+  const rimMaterial = new MeshStandardMaterial({
+    color: look.rim.color,
+    emissive: look.rim.emissive,
+    emissiveIntensity: look.rim.emissiveIntensity,
+    roughness: 0.35,
+    toneMapped: look.rim.emissiveIntensity === 0,
+  });
   const rim = new Mesh(
     new TorusGeometry(BOARD_DISC_RADIUS - RIM_TUBE * 0.6, RIM_TUBE, 12, 160),
-    new MeshStandardMaterial({
-      color: look.rim.color,
-      emissive: look.rim.emissive,
-      emissiveIntensity: look.rim.emissiveIntensity,
-      roughness: 0.35,
-      toneMapped: look.rim.emissiveIntensity === 0,
-    }),
+    rimMaterial,
   );
   rim.rotation.x = Math.PI / 2;
   rim.position.y = BOARD_TOP;
@@ -285,5 +295,19 @@ export const createScene = (
     renderer.dispose();
   };
 
-  return { renderer, scene, camera, resize, dispose };
+  return {
+    renderer,
+    scene,
+    camera,
+    pulse: {
+      key,
+      keyIntensity: look.key.intensity,
+      rim: rimMaterial,
+      rimIntensity: look.rim.emissiveIntensity,
+      table: tableMaterial,
+      tableIntensity: tableMaterial.emissiveIntensity,
+    },
+    resize,
+    dispose,
+  };
 };

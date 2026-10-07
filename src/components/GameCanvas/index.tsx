@@ -1,7 +1,11 @@
 import { useEffect, useRef } from "react";
 import { Vector3 } from "three";
-import { HOLES } from "@/lib/board";
+import { holeAt, HOLES, ZONE_APEX, ZONES } from "@/lib/board";
 import type { HoleIndex } from "@/lib/board";
+import { createBeatDetector } from "@/lib/beat";
+import type { BeatDetector } from "@/lib/beat";
+import { createCascade } from "@/lib/cascade";
+import type { Cascade } from "@/lib/cascade";
 import { canStop, hopOptions, stepOptions } from "@/lib/game";
 import type { GameState } from "@/lib/game";
 import {
@@ -24,6 +28,10 @@ import {
   SELECT_LIFT,
   SNAP_RADIUS,
 } from "./consts";
+import { createHaloSet } from "./halos";
+import type { HaloSet } from "./halos";
+import { createListener, isListenerError } from "./listener";
+import type { Listener, MusicStatus } from "./listener";
 import { createMarbleSet } from "./marbles";
 import type { Marble, MarbleSet } from "./marbles";
 import { createMarkerSet } from "./markers";
@@ -33,6 +41,8 @@ import type { Picker } from "./picking";
 import { createScene } from "./scene";
 import type { SceneHandle } from "./scene";
 
+export type { MusicStatus } from "./listener";
+
 type GameCanvasProps = {
   state: GameState;
   /** True when the seat to move is a person at this screen. */
@@ -41,6 +51,9 @@ type GameCanvasProps = {
   hints: boolean;
   /** How the table is dressed. Changing it rebuilds the scene. */
   theme: Theme;
+  /** Listen through the microphone and light the table to the music. */
+  music: boolean;
+  onMusicStatus: (status: MusicStatus) => void;
   /** The player stepped a marble into an adjacent hole; the turn ends. */
   onStep: (piece: number, hole: HoleIndex) => void;
   /** The player hopped a marble; the chain stays open if it can. */
@@ -89,12 +102,45 @@ type Rig = {
   readonly marbles: MarbleSet;
   readonly markers: MarkerSet;
   readonly picker: Picker;
+  readonly halos: HaloSet;
   flight: Flight | null;
   selection: Selection | null;
   press: Press | null;
   /** Set when a drag commits so the sync drops from the fingertip. */
   pendingDrop: { pieceId: number; x: number; z: number } | null;
 };
+
+/**
+ * The ears: they outlive the scene, so switching themes mid-song keeps the
+ * microphone open and the beat phase intact.
+ */
+type Audio = {
+  listener: Listener | null;
+  detector: BeatDetector | null;
+  readonly cascade: Cascade;
+  readonly spectrum: Uint8Array<ArrayBuffer>;
+  /** Which tip the next off-center wave starts from. */
+  beatIndex: number;
+  /** A decaying envelope kicked by each beat, for rim and HUD flashes. */
+  flash: number;
+  /** Whether the last frame applied music; lets a stop clean up once. */
+  lit: boolean;
+  /** Last value written to the --music CSS variable. */
+  cssLevel: number;
+};
+
+const HALO_CAPACITY = 60;
+const SPECTRUM_BINS = 512;
+const FLASH_DECAY = 0.88;
+const CSS_LEVEL_STEP = 0.03;
+/** Beats this strong start at the center; the rest sweep in from a tip. */
+const CENTER_BEAT_STRENGTH = 0.75;
+
+/** Board-plane origins for waves: the six tips, clockwise from the top. */
+const TIP_ORIGINS: readonly Point2[] = ZONES.map((zone) => {
+  const apex = HOLES[holeAt(ZONE_APEX[zone])];
+  return { x: apex.px, y: apex.py };
+});
 
 const DROP_MS = 170;
 const DROP_LIFT = 0.15;
@@ -132,6 +178,8 @@ export const GameCanvas = ({
   interactive,
   hints,
   theme,
+  music,
+  onMusicStatus,
   onStep,
   onHop,
   onStop,
@@ -150,6 +198,17 @@ export const GameCanvas = ({
   const onSettledRef = useRef(onSettled);
   const selectRef = useRef<(pieceId: number) => void>(() => {});
   const reselectRef = useRef<() => void>(() => {});
+  const onMusicStatusRef = useRef(onMusicStatus);
+  const audioRef = useRef<Audio>({
+    listener: null,
+    detector: null,
+    cascade: createCascade(),
+    spectrum: new Uint8Array(SPECTRUM_BINS),
+    beatIndex: 0,
+    flash: 0,
+    lit: false,
+    cssLevel: 0,
+  });
 
   // Event handlers and the frame loop read the latest props through refs,
   // so the scene is built once and never torn down on a re-render.
@@ -161,6 +220,7 @@ export const GameCanvas = ({
     onHopRef.current = onHop;
     onStopRef.current = onStop;
     onSettledRef.current = onSettled;
+    onMusicStatusRef.current = onMusicStatus;
   });
 
   useEffect(() => {
@@ -174,6 +234,7 @@ export const GameCanvas = ({
       marbles: createMarbleSet(handle.scene, theme),
       markers: createMarkerSet(handle.scene, theme.scene.markerLighten),
       picker: createPicker(canvas, handle.camera),
+      halos: createHaloSet(handle.scene, HALO_CAPACITY),
       flight: null,
       selection: null,
       press: null,
@@ -430,7 +491,83 @@ export const GameCanvas = ({
         }
       }
       rig.markers.pulse(now);
+      playMusic(now);
       handle.renderer.render(handle.scene, handle.camera);
+    };
+
+    /** Read the microphone and light the table for this frame. */
+    const playMusic = (now: number) => {
+      const audio = audioRef.current;
+      const { listener, detector, cascade } = audio;
+      const heard =
+        listener !== null &&
+        detector !== null &&
+        listener.sample(audio.spectrum);
+      if (!heard) {
+        if (audio.lit) quietMusic();
+        return;
+      }
+      audio.lit = true;
+      const frame = detector.update(audio.spectrum, now);
+      if (frame.beat) {
+        const strength = 0.55 + 0.7 * frame.strength;
+        if (frame.strength >= CENTER_BEAT_STRENGTH) {
+          cascade.trigger(0, 0, strength, now);
+        } else {
+          const origin = TIP_ORIGINS[audio.beatIndex % TIP_ORIGINS.length];
+          cascade.trigger(origin.x, origin.y, strength, now);
+          audio.beatIndex += 1;
+        }
+        audio.flash = Math.max(audio.flash, frame.strength);
+      }
+      audio.flash *= FLASH_DECAY;
+      cascade.prune(now);
+
+      const look = theme.music;
+      rig.halos.begin();
+      for (const marble of rig.marbles.byPiece.values()) {
+        const position = marble.mesh.position;
+        const glow = cascade.glowAt(position.x, position.z, now);
+        rig.marbles.setMusic(marble, glow);
+        rig.halos.add(
+          position.x,
+          position.z,
+          marble.mesh.material.color,
+          glow * look.halo,
+        );
+      }
+      rig.halos.end();
+
+      const bass = frame.bass + audio.flash * 0.5;
+      const { pulse } = handle;
+      pulse.rim.emissiveIntensity = pulse.rimIntensity + bass * look.rimPulse;
+      pulse.table.emissiveIntensity =
+        pulse.tableIntensity + bass * look.gridPulse;
+      pulse.key.intensity = pulse.keyIntensity * (1 + bass * look.keyPulse);
+
+      const level = Math.min(1, audio.flash + frame.bass * 0.4);
+      if (Math.abs(level - audio.cssLevel) > CSS_LEVEL_STEP) {
+        audio.cssLevel = level;
+        document.documentElement.style.setProperty("--music", level.toFixed(2));
+      }
+    };
+
+    /** Put everything music touched back the way the theme left it. */
+    const quietMusic = () => {
+      const audio = audioRef.current;
+      audio.lit = false;
+      audio.flash = 0;
+      for (const marble of rig.marbles.byPiece.values()) {
+        rig.marbles.setMusic(marble, 0);
+      }
+      rig.halos.begin();
+      rig.halos.end();
+      const { pulse } = handle;
+      pulse.rim.emissiveIntensity = pulse.rimIntensity;
+      pulse.table.emissiveIntensity = pulse.tableIntensity;
+      pulse.key.intensity = pulse.keyIntensity;
+      audio.cssLevel = 0;
+      document.documentElement.style.setProperty("--music", "0");
     };
     frame = requestAnimationFrame(tick);
 
@@ -443,6 +580,7 @@ export const GameCanvas = ({
       canvas.removeEventListener("pointercancel", onPointerCancel);
       rig.marbles.dispose();
       rig.markers.dispose();
+      rig.halos.dispose();
       handle.dispose();
       rigRef.current = null;
       previousStateRef.current = null;
@@ -510,6 +648,51 @@ export const GameCanvas = ({
     }
     if (!animated) settled();
   }, [state, interactive, theme]);
+
+  // Open or close the microphone as the option flips. The listener lives
+  // outside the scene so a theme change mid-song does not drop the beat.
+  useEffect(() => {
+    const audio = audioRef.current;
+    if (!music) {
+      audio.listener?.stop();
+      audio.listener = null;
+      audio.detector = null;
+      onMusicStatusRef.current("off");
+      return;
+    }
+    let cancelled = false;
+    const listener = createListener();
+    audio.listener = listener;
+    onMusicStatusRef.current("starting");
+    listener
+      .start()
+      .then(() => {
+        if (cancelled) return;
+        audio.detector = createBeatDetector(
+          listener.sampleRate(),
+          listener.fftSize,
+        );
+        audio.beatIndex = 0;
+        onMusicStatusRef.current("listening");
+      })
+      .catch((error: unknown) => {
+        if (cancelled) return;
+        audio.listener = null;
+        onMusicStatusRef.current(
+          isListenerError(error) && error.code === "UNSUPPORTED"
+            ? "unsupported"
+            : "denied",
+        );
+      });
+    return () => {
+      cancelled = true;
+      listener.stop();
+      if (audio.listener === listener) {
+        audio.listener = null;
+        audio.detector = null;
+      }
+    };
+  }, [music]);
 
   // Flipping the hints option mid-selection redraws (or clears) the rings.
   useEffect(() => {

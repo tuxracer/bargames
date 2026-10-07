@@ -14,6 +14,10 @@ export type Marble = {
   readonly mesh: Mesh<SphereGeometry, MeshPhysicalMaterial>;
   /** The hole the mesh currently depicts the marble as resting in. */
   hole: number;
+  /** Selection glow, 0..1. */
+  selectGlow: number;
+  /** Music glow from passing waves, 0 when quiet. */
+  musicGlow: number;
 };
 
 export type MarbleSet = {
@@ -25,6 +29,11 @@ export type MarbleSet = {
   /** Put a marble at a board-plane point, raised by `lift`. */
   place: (marble: Marble, x: number, z: number, lift: number) => void;
   setGlow: (marble: Marble, amount: number) => void;
+  /**
+   * Light a marble from a passing wave: extra emission pushed toward white,
+   * and a swell in size. `glow` of 0 restores its resting look.
+   */
+  setMusic: (marble: Marble, glow: number) => void;
   dispose: () => void;
 };
 
@@ -34,6 +43,7 @@ export const createMarbleSet = (scene: Scene, theme: Theme): MarbleSet => {
   const geometry = new SphereGeometry(MARBLE_RADIUS, 40, 28);
   const byPiece = new Map<number, Marble>();
   const glow = new Color();
+  const beam = new Color();
 
   const make = (state: GameState, piece: Piece): Marble => {
     const look = theme.marbles[state.seats[piece.seat].zone];
@@ -51,7 +61,7 @@ export const createMarbleSet = (scene: Scene, theme: Theme): MarbleSet => {
     const mesh = new Mesh(geometry, material);
     mesh.castShadow = true;
     scene.add(mesh);
-    return { mesh, hole: -1 };
+    return { mesh, hole: -1, selectGlow: 0, musicGlow: 0 };
   };
 
   const remove = (marble: Marble) => {
@@ -69,11 +79,35 @@ export const createMarbleSet = (scene: Scene, theme: Theme): MarbleSet => {
     marble.hole = hole;
   };
 
+  const white = new Color(0xffffff);
+  const music = theme.music;
+
   const setGlow = (marble: Marble, amount: number) => {
+    marble.selectGlow = amount;
+    applyGlow(marble);
+  };
+
+  const setMusic = (marble: Marble, amount: number) => {
+    if (marble.musicGlow === amount) return;
+    marble.musicGlow = amount;
+    applyGlow(marble);
+    marble.mesh.scale.setScalar(1 + Math.min(amount, 1.5) * music.swell);
+  };
+
+  const applyGlow = (marble: Marble) => {
+    const material = marble.mesh.material;
     glow
-      .copy(marble.mesh.material.color)
-      .multiplyScalar(theme.scene.marbleGlow + amount * SELECT_GLOW);
-    marble.mesh.material.emissive.copy(glow);
+      .copy(material.color)
+      .multiplyScalar(theme.scene.marbleGlow + marble.selectGlow * SELECT_GLOW);
+    if (marble.musicGlow > 0) {
+      const wave = Math.min(marble.musicGlow, 1.5);
+      beam
+        .copy(material.color)
+        .lerp(white, music.whiten * Math.min(wave, 1))
+        .multiplyScalar(wave * music.marbleGlow);
+      glow.add(beam);
+    }
+    material.emissive.copy(glow);
   };
 
   const sync = (state: GameState) => {
@@ -104,5 +138,5 @@ export const createMarbleSet = (scene: Scene, theme: Theme): MarbleSet => {
     geometry.dispose();
   };
 
-  return { byPiece, sync, rest, place, setGlow, dispose };
+  return { byPiece, sync, rest, place, setGlow, setMusic, dispose };
 };

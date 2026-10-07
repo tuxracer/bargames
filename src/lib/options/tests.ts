@@ -25,8 +25,8 @@ describe("parseOptions", () => {
 
 describe("saveOptions and loadOptions", () => {
   it("round-trip through storage", () => {
-    saveOptions({ hints: false, theme: "neon" });
-    expect(loadOptions()).toEqual({ hints: false, theme: "neon" });
+    saveOptions({ hints: false, theme: "neon", music: true });
+    expect(loadOptions()).toEqual({ hints: false, theme: "neon", music: true });
     saveOptions(DEFAULT_OPTIONS);
     expect(loadOptions()).toEqual(DEFAULT_OPTIONS);
   });

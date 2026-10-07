@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useReducer, useState } from "react";
 import { GameCanvas } from "@/components/GameCanvas";
+import type { MusicStatus } from "@/components/GameCanvas";
 import { Hud } from "@/components/Hud";
 import { OptionsPanel } from "@/components/Options";
 import { Setup } from "@/components/Setup";
@@ -27,6 +28,7 @@ export const App = () => {
   const [settled, setSettled] = useState(true);
   const [options, setOptions] = useState<Options>(loadOptions);
   const [optionsOpen, setOptionsOpen] = useState(false);
+  const [musicStatus, setMusicStatus] = useState<MusicStatus>("off");
   const game = match.game;
 
   const theme = getTheme(options.theme);
@@ -89,6 +91,8 @@ export const App = () => {
         interactive={interactive}
         hints={options.hints}
         theme={theme}
+        music={options.music}
+        onMusicStatus={setMusicStatus}
         onStep={handleStep}
         onHop={handleHop}
         onStop={handleStop}
@@ -114,9 +118,17 @@ export const App = () => {
       >
         Options
       </button>
+      {musicStatus === "listening" && (
+        <div className="music-indicator" title="Listening to the room">
+          <span />
+          <span />
+          <span />
+        </div>
+      )}
       {optionsOpen && (
         <OptionsPanel
           options={options}
+          musicStatus={musicStatus}
           onChange={setOptions}
           onClose={() => setOptionsOpen(false)}
         />

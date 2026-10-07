@@ -8,10 +8,15 @@ export type Options = {
   readonly hints: boolean;
   /** How the table is dressed. */
   readonly theme: ThemeId;
+  /** Listen through the microphone and light the table to the music. */
+  readonly music: boolean;
 };
 
 export const isOptions = (value: unknown): value is Options => {
   return (
-    isPlainObject(value) && isBoolean(value.hints) && isThemeId(value.theme)
+    isPlainObject(value) &&
+    isBoolean(value.hints) &&
+    isThemeId(value.theme) &&
+    isBoolean(value.music)
   );
 };

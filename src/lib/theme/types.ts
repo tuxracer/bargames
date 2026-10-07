@@ -66,10 +66,29 @@ export type SceneTheme = {
   readonly markerLighten: number;
 };
 
+/** How hard a look reacts to music; Tavern sways, Neon goes off. */
+export type MusicTheme = {
+  /** Extra emission a passing wave adds to a marble. */
+  readonly marbleGlow: number;
+  /** How far the wave's color is pushed toward white. */
+  readonly whiten: number;
+  /** Strength of the light pools under glowing marbles. */
+  readonly halo: number;
+  /** How much a marble swells as a wave passes. */
+  readonly swell: number;
+  /** Rim emission added per unit of bass. */
+  readonly rimPulse: number;
+  /** Grid floor emission added per unit of bass. */
+  readonly gridPulse: number;
+  /** Key light intensity swing per unit of bass. */
+  readonly keyPulse: number;
+};
+
 export type Theme = {
   readonly id: ThemeId;
   readonly name: string;
   readonly blurb: string;
   readonly scene: SceneTheme;
+  readonly music: MusicTheme;
   readonly marbles: Readonly<Record<Zone, MarbleLook>>;
 };

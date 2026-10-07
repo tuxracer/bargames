@@ -10,7 +10,8 @@ Open it on a phone, drag a marble, and let go over a glowing hole. The board is 
 - Drag a marble and drop it on a highlighted hole, or tap the marble and then tap where it should land. After a hop the marble stays up with its next hops ringed: hop again, or tap it (or Stop here) to set it down. When no hop remains, the turn ends on its own.
 - Standard rules: step to an adjacent empty hole, or hop over any marble into the empty hole directly beyond, as many times in a row as the board allows. A marble may pass through another seat's tip but may not come to rest there. First player to fill the opposite tip wins.
 - Undo takes back your last move (and the computer's reply). No timers, no scores.
-- Options (top right) lets you pick the look of the table, Tavern (wood, felt, lamplight) or Neon (black lacquer, neon tubes, a grid floor), and switch off the rings that show where a lifted marble can go. Both choices are remembered on that device.
+- Options (top right) lets you pick the look of the table, Tavern (wood, felt, lamplight) or Neon (black lacquer, neon tubes, a grid floor), and switch off the rings that show where a lifted marble can go. All choices are remembered on that device.
+- Turn on "React to music" and the table listens through the microphone: every beat sends a wave of light cascading through the marbles, with pools of light spilling onto the board, the neon rim and grid floor breathing with the bass, and the tavern lamp swaying. Nothing is recorded or sent anywhere; the audio only ever feeds an on-device analyser.
 
 ## Install it
 
