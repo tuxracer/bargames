@@ -1,0 +1,443 @@
+import { useEffect, useRef } from "react";
+import { Vector3 } from "three";
+import { HOLES } from "@/lib/board";
+import { legalMovesFor } from "@/lib/game";
+import type { GameState, Move } from "@/lib/game";
+import {
+  createMotionSample,
+  HOP_LIFT,
+  LEG_MS,
+  RETURN_MS,
+  sampleMotion,
+} from "@/lib/motion";
+import type { Point2 } from "@/lib/motion";
+import { MARBLE_LOOKS } from "@/lib/palette";
+import { vibrateIfSupported } from "@/utils/vibrateIfSupported";
+import {
+  BOARD_DISC_RADIUS,
+  DRAG_FINGER_OFFSET,
+  DRAG_LIFT,
+  DRAG_THRESHOLD_PX,
+  LAND_HAPTIC_MS,
+  PICK_RADIUS,
+  SELECT_LIFT,
+  SNAP_RADIUS,
+} from "./consts";
+import { createMarbleSet } from "./marbles";
+import type { Marble, MarbleSet } from "./marbles";
+import { createMarkerSet } from "./markers";
+import type { MarkerSet } from "./markers";
+import { createPicker } from "./picking";
+import type { Picker } from "./picking";
+import { createScene } from "./scene";
+import type { SceneHandle } from "./scene";
+
+type GameCanvasProps = {
+  state: GameState;
+  /** True when the seat to move is a person at this screen. */
+  interactive: boolean;
+  onMove: (move: Move) => void;
+  /** Fires once the board has finished showing the latest state. */
+  onSettled: () => void;
+};
+
+/** A marble in the air: along a replayed path, or dropping from a drag. */
+type Flight = {
+  readonly marble: Marble;
+  readonly points: readonly Point2[];
+  readonly startMs: number;
+  readonly legMs: number;
+  readonly lift: number;
+  lastLeg: number;
+  readonly onDone: (() => void) | null;
+};
+
+type Selection = {
+  readonly pieceId: number;
+  readonly origin: number;
+  readonly moves: readonly Move[];
+  readonly destinations: readonly number[];
+};
+
+type Press = {
+  readonly pointerId: number;
+  readonly pieceId: number;
+  readonly startX: number;
+  readonly startY: number;
+  /** Tapping an already-selected marble puts it back down. */
+  readonly toggleOff: boolean;
+  dragging: boolean;
+  dragX: number;
+  dragZ: number;
+  snap: number | null;
+};
+
+type Rig = {
+  readonly handle: SceneHandle;
+  readonly marbles: MarbleSet;
+  readonly markers: MarkerSet;
+  readonly picker: Picker;
+  flight: Flight | null;
+  selection: Selection | null;
+  press: Press | null;
+  /** Set when a drag commits so the sync drops from the fingertip. */
+  pendingDrop: { pieceId: number; x: number; z: number } | null;
+};
+
+const DROP_MS = 170;
+const DROP_LIFT = 0.15;
+const RETURN_LIFT = 0.2;
+const BOB_AMOUNT = 0.04;
+const BOB_PERIOD_MS = 1_400;
+
+const holePoint = (hole: number): Point2 => ({
+  x: HOLES[hole].px,
+  y: HOLES[hole].py,
+});
+
+const destinationOf = (move: Move) => move.path[move.path.length - 1];
+
+/**
+ * The table: a tilted 2.5D view of the board, with the marbles as the only
+ * things that move. Drag a marble and let go over a glowing hole, or tap it
+ * and tap where it should land.
+ */
+export const GameCanvas = ({
+  state,
+  interactive,
+  onMove,
+  onSettled,
+}: GameCanvasProps) => {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const rigRef = useRef<Rig | null>(null);
+  const stateRef = useRef(state);
+  const interactiveRef = useRef(interactive);
+  const onMoveRef = useRef(onMove);
+  const onSettledRef = useRef(onSettled);
+  // Event handlers and the frame loop read the latest props through refs,
+  // so the scene is built once and never torn down on a re-render.
+  useEffect(() => {
+    stateRef.current = state;
+    interactiveRef.current = interactive;
+    onMoveRef.current = onMove;
+    onSettledRef.current = onSettled;
+  });
+
+  useEffect(() => {
+    const container = containerRef.current;
+    const canvas = canvasRef.current;
+    if (!container || !canvas) return;
+
+    const handle = createScene(canvas);
+    const rig: Rig = {
+      handle,
+      marbles: createMarbleSet(handle.scene),
+      markers: createMarkerSet(handle.scene),
+      picker: createPicker(canvas, handle.camera),
+      flight: null,
+      selection: null,
+      press: null,
+      pendingDrop: null,
+    };
+    rigRef.current = rig;
+
+    const sample = createMotionSample();
+    const hit = new Vector3();
+
+    const marbleOf = (pieceId: number) => rig.marbles.byPiece.get(pieceId);
+
+    const clearSelection = () => {
+      const selection = rig.selection;
+      if (!selection) return;
+      rig.selection = null;
+      rig.markers.hide();
+      const marble = marbleOf(selection.pieceId);
+      if (marble) rig.marbles.setGlow(marble, 0);
+    };
+
+    const select = (pieceId: number) => {
+      clearSelection();
+      const current = stateRef.current;
+      const moves = legalMovesFor(current, pieceId);
+      const origin = current.pieces[pieceId].hole;
+      rig.selection = {
+        pieceId,
+        origin,
+        moves,
+        destinations: moves.map(destinationOf),
+      };
+      const color = MARBLE_LOOKS[current.seats[current.current].zone].hex;
+      rig.markers.show(rig.selection.destinations, color);
+      const marble = marbleOf(pieceId);
+      if (marble) rig.marbles.setGlow(marble, 1);
+    };
+
+    const startFlight = (
+      marble: Marble,
+      points: readonly Point2[],
+      legMs: number,
+      lift: number,
+      onDone: (() => void) | null,
+    ) => {
+      rig.flight = {
+        marble,
+        points,
+        startMs: performance.now(),
+        legMs,
+        lift,
+        lastLeg: 0,
+        onDone,
+      };
+    };
+
+    const commit = (move: Move) => {
+      clearSelection();
+      onMoveRef.current(move);
+    };
+
+    const returnHome = (press: Press) => {
+      const marble = marbleOf(press.pieceId);
+      const selection = rig.selection;
+      if (!marble || !selection) return;
+      startFlight(
+        marble,
+        [{ x: press.dragX, y: press.dragZ }, holePoint(selection.origin)],
+        RETURN_MS,
+        RETURN_LIFT,
+        null,
+      );
+    };
+
+    const onPointerDown = (event: PointerEvent) => {
+      if (!event.isPrimary || !interactiveRef.current || rig.flight) return;
+      if (!rig.picker.pointToBoard(event.clientX, event.clientY, hit)) return;
+      const current = stateRef.current;
+      const hole = rig.picker.nearestHole(hit.x, hit.z, PICK_RADIUS);
+
+      if (hole !== -1 && current.occupancy[hole] === current.current) {
+        const piece = current.pieces.find(
+          (candidate) => candidate.hole === hole,
+        );
+        if (!piece) return;
+        const toggleOff = rig.selection?.pieceId === piece.id;
+        if (!toggleOff) select(piece.id);
+        rig.press = {
+          pointerId: event.pointerId,
+          pieceId: piece.id,
+          startX: event.clientX,
+          startY: event.clientY,
+          toggleOff,
+          dragging: false,
+          dragX: HOLES[hole].px,
+          dragZ: HOLES[hole].py,
+          snap: null,
+        };
+        // Keep the drag even when the finger slides off the canvas. A
+        // synthetic event has no live pointer to capture; that is fine.
+        try {
+          canvas.setPointerCapture(event.pointerId);
+        } catch {
+          // Nothing to capture.
+        }
+        return;
+      }
+
+      const selection = rig.selection;
+      if (!selection) return;
+      if (hole !== -1 && selection.destinations.includes(hole)) {
+        const move = selection.moves.find(
+          (candidate) => destinationOf(candidate) === hole,
+        );
+        if (move) commit(move);
+        return;
+      }
+      clearSelection();
+    };
+
+    const onPointerMove = (event: PointerEvent) => {
+      const press = rig.press;
+      if (!press || event.pointerId !== press.pointerId) return;
+      if (!press.dragging) {
+        const travel = Math.hypot(
+          event.clientX - press.startX,
+          event.clientY - press.startY,
+        );
+        if (travel < DRAG_THRESHOLD_PX) return;
+        press.dragging = true;
+      }
+      if (!rig.picker.pointToBoard(event.clientX, event.clientY, hit)) return;
+      let x = hit.x;
+      let z = hit.z - DRAG_FINGER_OFFSET;
+      const reach = Math.hypot(x, z);
+      if (reach > BOARD_DISC_RADIUS) {
+        x *= BOARD_DISC_RADIUS / reach;
+        z *= BOARD_DISC_RADIUS / reach;
+      }
+      press.dragX = x;
+      press.dragZ = z;
+      const marble = marbleOf(press.pieceId);
+      if (marble) rig.marbles.place(marble, x, z, DRAG_LIFT);
+      const selection = rig.selection;
+      const snap = selection
+        ? rig.picker.nearestOf(selection.destinations, x, z, SNAP_RADIUS)
+        : null;
+      if (snap !== press.snap) {
+        press.snap = snap;
+        rig.markers.setTarget(snap);
+      }
+    };
+
+    const finishPress = (event: PointerEvent, cancelled: boolean) => {
+      const press = rig.press;
+      if (!press || event.pointerId !== press.pointerId) return;
+      rig.press = null;
+      if (canvas.hasPointerCapture(event.pointerId)) {
+        canvas.releasePointerCapture(event.pointerId);
+      }
+      if (!press.dragging) {
+        if (press.toggleOff) clearSelection();
+        return;
+      }
+      rig.markers.setTarget(null);
+      const selection = rig.selection;
+      if (!cancelled && press.snap !== null && selection) {
+        const move = selection.moves.find(
+          (candidate) => destinationOf(candidate) === press.snap,
+        );
+        if (move) {
+          rig.pendingDrop = {
+            pieceId: press.pieceId,
+            x: press.dragX,
+            z: press.dragZ,
+          };
+          commit(move);
+          return;
+        }
+      }
+      returnHome(press);
+    };
+    const onPointerUp = (event: PointerEvent) => finishPress(event, false);
+    const onPointerCancel = (event: PointerEvent) => finishPress(event, true);
+
+    canvas.addEventListener("pointerdown", onPointerDown);
+    canvas.addEventListener("pointermove", onPointerMove);
+    canvas.addEventListener("pointerup", onPointerUp);
+    canvas.addEventListener("pointercancel", onPointerCancel);
+
+    const observer = new ResizeObserver((entries) => {
+      const { width, height } = entries[0].contentRect;
+      if (width === 0 || height === 0) return;
+      handle.resize(width, height);
+      rig.picker.measure();
+    });
+    observer.observe(container);
+    handle.resize(container.clientWidth, container.clientHeight);
+
+    let frame = 0;
+    const tick = (now: number) => {
+      frame = requestAnimationFrame(tick);
+      const flight = rig.flight;
+      if (flight) {
+        sampleMotion(
+          flight.points,
+          now - flight.startMs,
+          sample,
+          flight.legMs,
+          flight.lift,
+        );
+        rig.marbles.place(flight.marble, sample.x, sample.y, sample.lift);
+        if (sample.leg !== flight.lastLeg) {
+          flight.lastLeg = sample.leg;
+          vibrateIfSupported(LAND_HAPTIC_MS);
+        }
+        if (sample.done) {
+          rig.flight = null;
+          flight.onDone?.();
+        }
+      }
+      const selection = rig.selection;
+      if (selection && !rig.press?.dragging) {
+        const marble = marbleOf(selection.pieceId);
+        if (marble && rig.flight?.marble !== marble) {
+          const bob =
+            BOB_AMOUNT * Math.sin((now / BOB_PERIOD_MS) * Math.PI * 2);
+          const spot = HOLES[selection.origin];
+          rig.marbles.place(marble, spot.px, spot.py, SELECT_LIFT + bob);
+        }
+      }
+      rig.markers.pulse(now);
+      handle.renderer.render(handle.scene, handle.camera);
+    };
+    frame = requestAnimationFrame(tick);
+
+    return () => {
+      cancelAnimationFrame(frame);
+      observer.disconnect();
+      canvas.removeEventListener("pointerdown", onPointerDown);
+      canvas.removeEventListener("pointermove", onPointerMove);
+      canvas.removeEventListener("pointerup", onPointerUp);
+      canvas.removeEventListener("pointercancel", onPointerCancel);
+      rig.marbles.dispose();
+      rig.markers.dispose();
+      handle.dispose();
+      rigRef.current = null;
+    };
+  }, []);
+
+  // Bring the table in line with the game: new marbles appear at rest, the
+  // marble that just moved flies there, anything else (an undo, a new game)
+  // simply snaps into place.
+  useEffect(() => {
+    const rig = rigRef.current;
+    if (!rig) return;
+    rig.flight = null;
+    rig.press = null;
+    rig.selection = null;
+    rig.markers.hide();
+    rig.marbles.sync(state);
+    for (const marble of rig.marbles.byPiece.values()) {
+      rig.marbles.setGlow(marble, 0);
+    }
+
+    const drop = rig.pendingDrop;
+    rig.pendingDrop = null;
+    let animated = false;
+    for (const piece of state.pieces) {
+      const marble = rig.marbles.byPiece.get(piece.id);
+      if (!marble || marble.hole === piece.hole) continue;
+      const lastMove = state.lastMove;
+      if (lastMove && lastMove.piece === piece.id) {
+        const land = () => {
+          marble.hole = piece.hole;
+          rig.marbles.rest(marble, piece.hole);
+          vibrateIfSupported(LAND_HAPTIC_MS);
+          onSettledRef.current();
+        };
+        const fromDrag = drop && drop.pieceId === piece.id;
+        const points = fromDrag
+          ? [{ x: drop.x, y: drop.z }, holePoint(piece.hole)]
+          : lastMove.path.map(holePoint);
+        rig.flight = {
+          marble,
+          points,
+          startMs: performance.now(),
+          legMs: fromDrag ? DROP_MS : LEG_MS,
+          lift: fromDrag ? DROP_LIFT : HOP_LIFT,
+          lastLeg: 0,
+          onDone: land,
+        };
+        animated = true;
+      } else {
+        rig.marbles.rest(marble, piece.hole);
+      }
+    }
+    if (!animated) onSettledRef.current();
+  }, [state]);
+
+  return (
+    <div ref={containerRef} className="game-canvas">
+      <canvas ref={canvasRef} />
+    </div>
+  );
+};

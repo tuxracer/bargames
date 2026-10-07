@@ -1,0 +1,71 @@
+import type { GameState } from "@/lib/game";
+import { MARBLE_LOOKS } from "@/lib/palette";
+
+type HudProps = {
+  game: GameState;
+  canUndo: boolean;
+  onUndo: () => void;
+  onPlayAgain: () => void;
+  onNewGame: () => void;
+};
+
+const statusLine = (game: GameState): string => {
+  const humans = game.seats.filter((seat) => seat.kind === "human").length;
+  if (game.winner !== null) {
+    const seat = game.seats[game.winner];
+    if (seat.kind === "human" && humans === 1) return "You win.";
+    return `${MARBLE_LOOKS[seat.zone].name} wins.`;
+  }
+  const seat = game.seats[game.current];
+  const name = MARBLE_LOOKS[seat.zone].name;
+  if (seat.kind === "computer") return `${name} is thinking`;
+  return humans === 1 ? "Your move" : `${name}, your move`;
+};
+
+/** Whose turn it is, and the two things you can do besides play. */
+export const Hud = ({
+  game,
+  canUndo,
+  onUndo,
+  onPlayAgain,
+  onNewGame,
+}: HudProps) => {
+  const over = game.winner !== null;
+  const seat = game.seats[over ? (game.winner as number) : game.current];
+  const look = MARBLE_LOOKS[seat.zone];
+
+  return (
+    <>
+      <header className="hud-top">
+        <p className="wordmark">bargames</p>
+        <p className={over ? "status status-over" : "status"}>
+          <span className="status-marble" style={{ background: look.css }} />
+          {statusLine(game)}
+        </p>
+      </header>
+      <footer className="hud-bottom">
+        {over ? (
+          <button
+            type="button"
+            className="button button-primary"
+            onClick={onPlayAgain}
+          >
+            Play again
+          </button>
+        ) : (
+          <button
+            type="button"
+            className="button"
+            disabled={!canUndo}
+            onClick={onUndo}
+          >
+            Undo
+          </button>
+        )}
+        <button type="button" className="button" onClick={onNewGame}>
+          New game
+        </button>
+      </footer>
+    </>
+  );
+};

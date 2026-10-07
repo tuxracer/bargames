@@ -1,0 +1,271 @@
+:root {
+  --ink: #0d0b0e;
+  --paper: #efe6d6;
+  --paper-dim: rgba(239, 230, 214, 0.62);
+  --amber: #f5a623;
+  --amber-dim: rgba(245, 166, 35, 0.45);
+  --panel: #171215;
+  --panel-edge: #3b2a1f;
+  --font: "Fraunces", Georgia, "Times New Roman", serif;
+}
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  overflow: hidden;
+  background: var(--ink);
+}
+
+body {
+  font-family: var(--font);
+  font-optical-sizing: auto;
+  color: var(--paper);
+  -webkit-font-smoothing: antialiased;
+  user-select: none;
+  -webkit-user-select: none;
+  touch-action: none;
+}
+
+button {
+  font: inherit;
+  color: inherit;
+}
+
+.game-canvas {
+  position: fixed;
+  inset: 0;
+}
+
+.game-canvas canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+  touch-action: none;
+}
+
+/* Soft darkening at the edges so the table falls away into the room. */
+.game-canvas::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: radial-gradient(
+    ellipse at 50% 50%,
+    transparent 58%,
+    rgba(6, 4, 7, 0.6) 100%
+  );
+}
+
+.hud-top {
+  position: fixed;
+  top: max(1rem, env(safe-area-inset-top));
+  left: 0;
+  right: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.5rem;
+  pointer-events: none;
+}
+
+.wordmark {
+  font-size: 0.8rem;
+  font-weight: 300;
+  letter-spacing: 0.32em;
+  color: var(--amber);
+  opacity: 0.8;
+}
+
+.status {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.55rem;
+  font-size: 1.15rem;
+  font-weight: 400;
+  color: var(--paper);
+}
+
+.status-over {
+  font-size: 1.5rem;
+  font-weight: 600;
+}
+
+.status-marble,
+.seat-marble {
+  display: inline-block;
+  width: 0.85em;
+  height: 0.85em;
+  border-radius: 50%;
+  background-image: radial-gradient(
+    circle at 32% 28%,
+    rgba(255, 255, 255, 0.85),
+    rgba(255, 255, 255, 0.1) 35%,
+    rgba(0, 0, 0, 0.25) 100%
+  );
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
+}
+
+.hud-bottom {
+  position: fixed;
+  bottom: max(1.1rem, env(safe-area-inset-bottom));
+  left: 0;
+  right: 0;
+  display: flex;
+  justify-content: center;
+  gap: 0.75rem;
+}
+
+.button {
+  padding: 0.65rem 1.25rem;
+  border: 1px solid var(--amber-dim);
+  border-radius: 10px;
+  background: rgba(13, 11, 14, 0.75);
+  color: var(--amber);
+  font-size: 0.95rem;
+  letter-spacing: 0.02em;
+  cursor: pointer;
+  transition:
+    background 160ms ease,
+    opacity 160ms ease,
+    transform 120ms ease;
+}
+
+.button:active {
+  transform: translateY(1px);
+}
+
+.button:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+.button-primary {
+  background: var(--amber);
+  color: var(--ink);
+  border-color: var(--amber);
+  font-weight: 600;
+}
+
+/* The setup card sits over the empty board. */
+.setup-backdrop {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+  background: rgba(6, 4, 7, 0.55);
+}
+
+.setup {
+  width: min(100%, 22rem);
+  padding: 1.6rem 1.5rem 1.5rem;
+  background: var(--panel);
+  border: 1px solid var(--panel-edge);
+  border-radius: 14px;
+  box-shadow: 0 30px 60px rgba(0, 0, 0, 0.6);
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.setup-eyebrow {
+  font-size: 0.75rem;
+  font-weight: 300;
+  letter-spacing: 0.32em;
+  color: var(--amber);
+  opacity: 0.8;
+}
+
+.setup-title {
+  font-size: 2.1rem;
+  font-weight: 600;
+  line-height: 1.05;
+  margin-top: -0.6rem;
+}
+
+.setup-blurb {
+  font-size: 0.95rem;
+  line-height: 1.45;
+  color: var(--paper-dim);
+}
+
+.setup-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.setup-label {
+  color: var(--paper-dim);
+  font-size: 0.95rem;
+}
+
+.segmented {
+  display: inline-flex;
+  border: 1px solid var(--panel-edge);
+  border-radius: 10px;
+  overflow: hidden;
+}
+
+.segment {
+  min-width: 2.6rem;
+  padding: 0.45rem 0.7rem;
+  border: none;
+  background: transparent;
+  color: var(--paper-dim);
+  cursor: pointer;
+}
+
+.segment + .segment {
+  border-left: 1px solid var(--panel-edge);
+}
+
+.segment-selected {
+  background: var(--amber);
+  color: var(--ink);
+  font-weight: 600;
+}
+
+.seat-list {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.seat-row {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  padding: 0.35rem 0;
+}
+
+.seat-name {
+  flex: 1;
+  font-size: 1rem;
+}
+
+.seat-kind {
+  padding: 0.3rem 0.75rem;
+  border: 1px solid var(--panel-edge);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--paper-dim);
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+
+.setup .button-primary {
+  margin-top: 0.4rem;
+  padding: 0.85rem 1.25rem;
+  font-size: 1.05rem;
+}
