@@ -30,10 +30,12 @@ const pickKnown = (record: Record<string, unknown>): Partial<Options> => {
     hints?: boolean;
     theme?: Options["theme"];
     music?: boolean;
+    facePlayer?: boolean;
   } = {};
   if (isBoolean(record.hints)) known.hints = record.hints;
   if (isThemeId(record.theme)) known.theme = record.theme;
   if (isBoolean(record.music)) known.music = record.music;
+  if (isBoolean(record.facePlayer)) known.facePlayer = record.facePlayer;
   return known;
 };
 

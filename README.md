@@ -11,6 +11,7 @@ Open it on a phone, drag a marble, and let go over a glowing hole. The board is 
 - Standard rules: step to an adjacent empty hole, or hop over any marble into the empty hole directly beyond, as many times in a row as the board allows. A marble may pass through another seat's tip but may not come to rest there. First player to fill the opposite tip wins.
 - Undo takes back your last move (and the computer's reply). No timers, no scores.
 - Options (top right) lets you pick the look of the table, Tavern (wood, felt, lamplight) or Neon (black lacquer, neon tubes, a grid floor), and switch off the rings that show where a lifted marble can go. All choices are remembered on that device.
+- Playing around a phone lying flat? Turn on "Tilt toward the player" and the view leans toward whoever is to move, with the words turned to read from their side. The board never spins on screen; only the perspective changes, the way a real board looks different from each chair.
 - Turn on "React to music" and the table listens through the microphone: every beat sends a wave of light cascading through the marbles, with pools of light spilling onto the board, the neon rim and grid floor breathing with the bass, and the tavern lamp swaying. Nothing is recorded or sent anywhere; the audio only ever feeds an on-device analyser.
 
 ## Install it

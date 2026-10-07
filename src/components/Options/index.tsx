@@ -92,6 +92,14 @@ export const OptionsPanel = ({
         onToggle={() => onChange({ ...options, hints: !options.hints })}
       />
       <Toggle
+        label="Tilt toward the player"
+        detail="For a phone flat on the table: the view leans toward whoever is to move, and the words turn to read from their side. The board itself stays put."
+        checked={options.facePlayer}
+        onToggle={() =>
+          onChange({ ...options, facePlayer: !options.facePlayer })
+        }
+      />
+      <Toggle
         label="React to music"
         detail="Listens through the microphone and lights the table to the beat. Nothing is recorded or sent anywhere."
         checked={options.music}

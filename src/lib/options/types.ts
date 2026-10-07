@@ -10,6 +10,8 @@ export type Options = {
   readonly theme: ThemeId;
   /** Listen through the microphone and light the table to the music. */
   readonly music: boolean;
+  /** Pass and play: tilt the view toward whoever is to move. */
+  readonly facePlayer: boolean;
 };
 
 export const isOptions = (value: unknown): value is Options => {
@@ -17,6 +19,7 @@ export const isOptions = (value: unknown): value is Options => {
     isPlainObject(value) &&
     isBoolean(value.hints) &&
     isThemeId(value.theme) &&
-    isBoolean(value.music)
+    isBoolean(value.music) &&
+    isBoolean(value.facePlayer)
   );
 };

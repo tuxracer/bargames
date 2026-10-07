@@ -23,6 +23,9 @@ export const DRAG_THRESHOLD_PX = 8;
 /** How close a touch must land to a hole center to pick it up. */
 export const PICK_RADIUS = 0.6;
 
+/** How long the view takes to swing toward the next player's side. */
+export const VIEW_SWING_MS = 900;
+
 /** Camera framing. */
 export const CAMERA_FOV = 34;
 export const CAMERA_ELEVATION = (58 * Math.PI) / 180;

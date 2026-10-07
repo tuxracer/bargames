@@ -1,7 +1,7 @@
 import { useEffect, useRef } from "react";
 import { Vector3 } from "three";
 import { holeAt, HOLES, ZONE_APEX, ZONES } from "@/lib/board";
-import type { HoleIndex } from "@/lib/board";
+import type { HoleIndex, Zone } from "@/lib/board";
 import { createBeatDetector } from "@/lib/beat";
 import type { BeatDetector } from "@/lib/beat";
 import { createCascade } from "@/lib/cascade";
@@ -17,6 +17,7 @@ import {
 } from "@/lib/motion";
 import type { Point2 } from "@/lib/motion";
 import type { Theme } from "@/lib/theme";
+import { smoothstep } from "@/utils/smoothstep";
 import { vibrateIfSupported } from "@/utils/vibrateIfSupported";
 import {
   BOARD_DISC_RADIUS,
@@ -27,6 +28,7 @@ import {
   PICK_RADIUS,
   SELECT_LIFT,
   SNAP_RADIUS,
+  VIEW_SWING_MS,
 } from "./consts";
 import { createHaloSet } from "./halos";
 import type { HaloSet } from "./halos";
@@ -51,6 +53,8 @@ type GameCanvasProps = {
   hints: boolean;
   /** How the table is dressed. Changing it rebuilds the scene. */
   theme: Theme;
+  /** Which side of the table the camera stands on; S is the default. */
+  viewZone: Zone;
   /** Listen through the microphone and light the table to the music. */
   music: boolean;
   onMusicStatus: (status: MusicStatus) => void;
@@ -136,6 +140,26 @@ const CSS_LEVEL_STEP = 0.03;
 /** Beats this strong start at the center; the rest sweep in from a tip. */
 const CENTER_BEAT_STRENGTH = 0.75;
 
+/** The camera stands on a tip's side at the tip's own bearing. */
+const zoneAzimuth = (zone: Zone): number => {
+  const apex = HOLES[holeAt(ZONE_APEX[zone])];
+  return Math.atan2(apex.py, apex.px);
+};
+
+/** The shorter way round from one bearing to another. */
+const shortestTurn = (from: number, to: number): number => {
+  const twoPi = Math.PI * 2;
+  return ((((to - from) % twoPi) + twoPi * 1.5) % twoPi) - Math.PI;
+};
+
+/** A camera swinging from one side of the table to another. */
+type ViewSwing = {
+  from: number;
+  to: number;
+  startMs: number;
+  current: number;
+};
+
 /** Board-plane origins for waves: the six tips, clockwise from the top. */
 const TIP_ORIGINS: readonly Point2[] = ZONES.map((zone) => {
   const apex = HOLES[holeAt(ZONE_APEX[zone])];
@@ -178,6 +202,7 @@ export const GameCanvas = ({
   interactive,
   hints,
   theme,
+  viewZone,
   music,
   onMusicStatus,
   onStep,
@@ -199,6 +224,12 @@ export const GameCanvas = ({
   const selectRef = useRef<(pieceId: number) => void>(() => {});
   const reselectRef = useRef<() => void>(() => {});
   const onMusicStatusRef = useRef(onMusicStatus);
+  const viewRef = useRef<ViewSwing>({
+    from: zoneAzimuth("S"),
+    to: zoneAzimuth("S"),
+    startMs: 0,
+    current: zoneAzimuth("S"),
+  });
   const audioRef = useRef<Audio>({
     listener: null,
     detector: null,
@@ -229,6 +260,7 @@ export const GameCanvas = ({
     if (!container || !canvas) return;
 
     const handle = createScene(canvas, theme);
+    handle.setView(viewRef.current.current);
     const rig: Rig = {
       handle,
       marbles: createMarbleSet(handle.scene, theme),
@@ -397,8 +429,12 @@ export const GameCanvas = ({
       // A fingertip hides what is under it, so a touch-dragged marble rides
       // ahead of the finger. A mouse cursor hides nothing: drop it dead on.
       const ahead = event.pointerType === "touch" ? DRAG_FINGER_OFFSET : 0;
-      let x = hit.x;
-      let z = hit.z - ahead;
+      // "Ahead" is away from whoever is holding the marble: the direction
+      // the camera looks along the board.
+      const camera = handle.camera.position;
+      const stance = Math.hypot(camera.x, camera.z) || 1;
+      let x = hit.x - (camera.x / stance) * ahead;
+      let z = hit.z - (camera.z / stance) * ahead;
       const reach = Math.hypot(x, z);
       if (reach > BOARD_DISC_RADIUS) {
         x *= BOARD_DISC_RADIUS / reach;
@@ -490,9 +526,25 @@ export const GameCanvas = ({
           rig.marbles.place(marble, spot.px, spot.py, SELECT_LIFT + bob);
         }
       }
+      swingView(now);
       rig.markers.pulse(now);
       playMusic(now);
       handle.renderer.render(handle.scene, handle.camera);
+    };
+
+    /** Ease the camera toward the side it has been asked to stand on. */
+    const swingView = (now: number) => {
+      const view = viewRef.current;
+      if (view.current === view.to) return;
+      const t = (now - view.startMs) / VIEW_SWING_MS;
+      if (t >= 1) {
+        view.current = view.to;
+      } else {
+        view.current =
+          view.from + shortestTurn(view.from, view.to) * smoothstep(t);
+      }
+      handle.setView(view.current);
+      rig.picker.measure();
     };
 
     /** Read the microphone and light the table for this frame. */
@@ -693,6 +745,16 @@ export const GameCanvas = ({
       }
     };
   }, [music]);
+
+  // A new side to stand on: start the swing from wherever the camera is.
+  useEffect(() => {
+    const view = viewRef.current;
+    const to = zoneAzimuth(viewZone);
+    if (to === view.to) return;
+    view.from = view.current;
+    view.to = to;
+    view.startMs = performance.now();
+  }, [viewZone]);
 
   // Flipping the hints option mid-selection redraws (or clears) the rings.
   useEffect(() => {

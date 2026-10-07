@@ -95,6 +95,18 @@ button {
   );
 }
 
+/* The HUD can turn to face a player across the table. */
+.hud {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  transition: transform 700ms ease;
+}
+
+.hud-flipped {
+  transform: rotate(180deg);
+}
+
 .hud-top {
   position: fixed;
   top: max(1rem, env(safe-area-inset-top));
@@ -149,6 +161,7 @@ button {
 }
 
 .hud-bottom {
+  pointer-events: auto;
   position: fixed;
   bottom: max(1.1rem, env(safe-area-inset-bottom));
   left: 0;

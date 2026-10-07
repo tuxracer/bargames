@@ -5,6 +5,8 @@ import type { Theme } from "@/lib/theme";
 type HudProps = {
   game: GameState;
   theme: Theme;
+  /** Turn the words upside down for a player on the far side of the table. */
+  flipped: boolean;
   canUndo: boolean;
   onUndo: () => void;
   onStop: () => void;
@@ -32,6 +34,7 @@ const statusLine = (game: GameState, theme: Theme): string => {
 export const Hud = ({
   game,
   theme,
+  flipped,
   canUndo,
   onUndo,
   onStop,
@@ -44,7 +47,7 @@ export const Hud = ({
   const midChain = !over && game.chain !== null;
 
   return (
-    <>
+    <div className={flipped ? "hud hud-flipped" : "hud"}>
       <header className="hud-top">
         <p className="wordmark">neongames</p>
         <p className={over ? "status status-over" : "status"}>
@@ -85,6 +88,6 @@ export const Hud = ({
           New game
         </button>
       </footer>
-    </>
+    </div>
   );
 };

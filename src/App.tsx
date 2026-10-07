@@ -5,9 +5,9 @@ import { Hud } from "@/components/Hud";
 import { OptionsPanel } from "@/components/Options";
 import { Setup } from "@/components/Setup";
 import { chooseMove } from "@/lib/ai";
-import type { HoleIndex } from "@/lib/board";
+import type { HoleIndex, Zone } from "@/lib/board";
 import { createGame } from "@/lib/game";
-import type { SeatKind } from "@/lib/game";
+import type { GameState, SeatKind } from "@/lib/game";
 import { canUndo, INITIAL_MATCH, matchReducer } from "@/lib/match";
 import type { MatchAction } from "@/lib/match";
 import { loadOptions, saveOptions } from "@/lib/options";
@@ -16,6 +16,21 @@ import { getTheme } from "@/lib/theme";
 
 /** A beat before the computer plays, so its move reads as a reply. */
 const THINK_MS = 650;
+
+/**
+ * Pass and play: which side of the table the view leans toward. The human
+ * to move, or through the computer's turns, the last human who moved.
+ */
+const viewZoneFor = (game: GameState | null, facePlayer: boolean): Zone => {
+  if (!facePlayer || game === null) return "S";
+  const count = game.seats.length;
+  const start = game.winner ?? game.current;
+  for (let back = 0; back < count; back += 1) {
+    const seat = game.seats[(start - back + count) % count];
+    if (seat.kind === "human") return seat.zone;
+  }
+  return "S";
+};
 
 /** An empty table to show behind the setup card. */
 const LOBBY_BOARD = createGame(["human", "human"]);
@@ -32,6 +47,9 @@ export const App = () => {
   const game = match.game;
 
   const theme = getTheme(options.theme);
+
+  const viewZone = viewZoneFor(game, options.facePlayer);
+  const flipped = viewZone === "N" || viewZone === "NE" || viewZone === "NW";
 
   useEffect(() => {
     saveOptions(options);
@@ -91,6 +109,7 @@ export const App = () => {
         interactive={interactive}
         hints={options.hints}
         theme={theme}
+        viewZone={viewZone}
         music={options.music}
         onMusicStatus={setMusicStatus}
         onStep={handleStep}
@@ -102,6 +121,7 @@ export const App = () => {
         <Hud
           game={game}
           theme={theme}
+          flipped={flipped}
           canUndo={settled && interactive && canUndo(match)}
           onUndo={() => play({ type: "undo" })}
           onStop={handleStop}

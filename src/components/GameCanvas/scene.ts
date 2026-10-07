@@ -61,6 +61,11 @@ export type SceneHandle = {
   };
   /** Resize the drawing buffer and refit the board into the viewport. */
   resize: (width: number, height: number) => void;
+  /**
+   * Put the camera on the side of the table at this azimuth (radians in
+   * the board plane; S is +pi/2) without turning the board on screen.
+   */
+  setView: (azimuth: number) => void;
   dispose: () => void;
 };
 
@@ -96,12 +101,22 @@ export const createScene = (
   scene.environmentIntensity = look.environmentIntensity;
 
   const camera = new PerspectiveCamera(CAMERA_FOV, 1, 0.5, 80);
-  camera.position.set(
-    0,
-    Math.sin(CAMERA_ELEVATION) * CAMERA_DISTANCE,
-    Math.cos(CAMERA_ELEVATION) * CAMERA_DISTANCE,
-  );
-  camera.lookAt(0, BOARD_TOP, 0);
+  // The camera's up is the board's north, not the sky: wherever the camera
+  // stands around the table, the S tip stays at the bottom of the screen
+  // and only the perspective tilts toward that side. Think of a player
+  // walking around a real board: the board does not turn, their view does.
+  camera.up.set(0, 0, -1);
+  let azimuth = Math.PI / 2;
+  const placeCamera = () => {
+    const reach = Math.cos(CAMERA_ELEVATION) * CAMERA_DISTANCE;
+    camera.position.set(
+      Math.cos(azimuth) * reach,
+      Math.sin(CAMERA_ELEVATION) * CAMERA_DISTANCE,
+      Math.sin(azimuth) * reach,
+    );
+    camera.lookAt(0, BOARD_TOP, 0);
+  };
+  placeCamera();
 
   const key = new DirectionalLight(look.key.color, look.key.intensity);
   key.position.set(...look.key.position);
@@ -257,9 +272,7 @@ export const createScene = (
   }
 
   const sample = new Vector3();
-  const resize = (width: number, height: number) => {
-    renderer.setSize(width, height, false);
-    camera.aspect = width / height;
+  const fit = () => {
     camera.zoom = 1;
     camera.updateProjectionMatrix();
     // Project the board rim and zoom until it just fits the viewport.
@@ -278,6 +291,19 @@ export const createScene = (
     }
     camera.zoom = Math.min(FIT_MARGIN_X / maxX, FIT_MARGIN_Y / maxY);
     camera.updateProjectionMatrix();
+  };
+
+  const resize = (width: number, height: number) => {
+    renderer.setSize(width, height, false);
+    camera.aspect = width / height;
+    fit();
+  };
+
+  const setView = (next: number) => {
+    if (next === azimuth) return;
+    azimuth = next;
+    placeCamera();
+    fit();
   };
 
   const dispose = () => {
@@ -308,6 +334,7 @@ export const createScene = (
       tableIntensity: tableMaterial.emissiveIntensity,
     },
     resize,
+    setView,
     dispose,
   };
 };
