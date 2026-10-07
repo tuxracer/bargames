@@ -37,6 +37,8 @@ type GameCanvasProps = {
   state: GameState;
   /** True when the seat to move is a person at this screen. */
   interactive: boolean;
+  /** Ring the holes a lifted marble may go to. Off is for purists. */
+  hints: boolean;
   /** The player stepped a marble into an adjacent hole; the turn ends. */
   onStep: (piece: number, hole: HoleIndex) => void;
   /** The player hopped a marble; the chain stays open if it can. */
@@ -126,6 +128,7 @@ const isForward = (previous: GameState | null, next: GameState): boolean => {
 export const GameCanvas = ({
   state,
   interactive,
+  hints,
   onStep,
   onHop,
   onStop,
@@ -137,17 +140,20 @@ export const GameCanvas = ({
   const stateRef = useRef(state);
   const previousStateRef = useRef<GameState | null>(null);
   const interactiveRef = useRef(interactive);
+  const hintsRef = useRef(hints);
   const onStepRef = useRef(onStep);
   const onHopRef = useRef(onHop);
   const onStopRef = useRef(onStop);
   const onSettledRef = useRef(onSettled);
   const selectRef = useRef<(pieceId: number) => void>(() => {});
+  const reselectRef = useRef<() => void>(() => {});
 
   // Event handlers and the frame loop read the latest props through refs,
   // so the scene is built once and never torn down on a re-render.
   useEffect(() => {
     stateRef.current = state;
     interactiveRef.current = interactive;
+    hintsRef.current = hints;
     onStepRef.current = onStep;
     onHopRef.current = onHop;
     onStopRef.current = onStop;
@@ -200,11 +206,16 @@ export const GameCanvas = ({
         destinations: [...steps, ...hops],
       };
       const color = MARBLE_LOOKS[current.seats[current.current].zone].hex;
-      rig.markers.show(rig.selection.destinations, color);
+      if (hintsRef.current) {
+        rig.markers.show(rig.selection.destinations, color);
+      }
       const marble = marbleOf(pieceId);
       if (marble) rig.marbles.setGlow(marble, 1);
     };
     selectRef.current = select;
+    reselectRef.current = () => {
+      if (rig.selection && !rig.press) select(rig.selection.pieceId);
+    };
 
     const startFlight = (
       marble: Marble,
@@ -495,6 +506,11 @@ export const GameCanvas = ({
     }
     if (!animated) settled();
   }, [state, interactive]);
+
+  // Flipping the hints option mid-selection redraws (or clears) the rings.
+  useEffect(() => {
+    reselectRef.current();
+  }, [hints]);
 
   return (
     <div ref={containerRef} className="game-canvas">

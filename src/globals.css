@@ -269,3 +269,92 @@ button {
   padding: 0.85rem 1.25rem;
   font-size: 1.05rem;
 }
+
+/* Options: a quiet control in the top corner, and a panel like setup's. */
+.options-button {
+  position: fixed;
+  top: max(0.85rem, env(safe-area-inset-top));
+  right: max(0.9rem, env(safe-area-inset-right));
+  padding: 0.35rem 0.7rem;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--amber);
+  font-size: 0.85rem;
+  opacity: 0.7;
+  cursor: pointer;
+}
+
+.options-button:active {
+  opacity: 1;
+}
+
+.panel-title {
+  font-size: 1.5rem;
+  font-weight: 600;
+  line-height: 1.1;
+  margin-top: -0.5rem;
+}
+
+.toggle-row {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  width: 100%;
+  padding: 0.6rem 0;
+  border: none;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+}
+
+.toggle-text {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+
+.toggle-label {
+  font-size: 1rem;
+}
+
+.toggle-detail {
+  font-size: 0.85rem;
+  line-height: 1.35;
+  color: var(--paper-dim);
+}
+
+.toggle {
+  position: relative;
+  flex: none;
+  width: 2.7rem;
+  height: 1.55rem;
+  border-radius: 999px;
+  background: #2c2126;
+  border: 1px solid var(--panel-edge);
+  transition: background 180ms ease;
+}
+
+.toggle-knob {
+  position: absolute;
+  top: 0.15rem;
+  left: 0.15rem;
+  width: 1.15rem;
+  height: 1.15rem;
+  border-radius: 50%;
+  background: var(--paper-dim);
+  transition:
+    transform 180ms ease,
+    background 180ms ease;
+}
+
+.toggle-on {
+  background: var(--amber);
+  border-color: var(--amber);
+}
+
+.toggle-on .toggle-knob {
+  transform: translateX(1.15rem);
+  background: var(--ink);
+}

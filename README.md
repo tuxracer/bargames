@@ -10,6 +10,7 @@ Open it on a phone, drag a marble, and let go over a glowing hole. The board is 
 - Drag a marble and drop it on a highlighted hole, or tap the marble and then tap where it should land. After a hop the marble stays up with its next hops ringed: hop again, or tap it (or Stop here) to set it down. When no hop remains, the turn ends on its own.
 - Standard rules: step to an adjacent empty hole, or hop over any marble into the empty hole directly beyond, as many times in a row as the board allows. A marble may pass through another seat's tip but may not come to rest there. First player to fill the opposite tip wins.
 - Undo takes back your last move (and the computer's reply). No timers, no scores.
+- Options (top right) lets you switch off the rings that show where a lifted marble can go, for a purer game. The choice is remembered on that device.
 
 ## Tech
 
