@@ -1,4 +1,5 @@
 import type { Options } from "@/lib/options";
+import { THEME_LIST } from "@/lib/theme";
 
 type OptionsPanelProps = {
   options: Options;
@@ -42,7 +43,37 @@ export const OptionsPanel = ({
       onClick={(event) => event.stopPropagation()}
     >
       <p className="setup-eyebrow">options</p>
-      <h2 className="panel-title">How the table helps</h2>
+      <h2 className="panel-title">The table</h2>
+      <ul className="theme-list">
+        {THEME_LIST.map((theme) => (
+          <li key={theme.id}>
+            <button
+              type="button"
+              className={
+                theme.id === options.theme
+                  ? "theme-choice theme-choice-selected"
+                  : "theme-choice"
+              }
+              data-theme={theme.id}
+              onClick={() => onChange({ ...options, theme: theme.id })}
+            >
+              <span className="theme-swatch">
+                {(["S", "N", "NE"] as const).map((zone) => (
+                  <span
+                    key={zone}
+                    className="theme-swatch-dot"
+                    style={{ background: theme.marbles[zone].css }}
+                  />
+                ))}
+              </span>
+              <span className="theme-text">
+                <span className="toggle-label">{theme.name}</span>
+                <span className="toggle-detail">{theme.blurb}</span>
+              </span>
+            </button>
+          </li>
+        ))}
+      </ul>
       <Toggle
         label="Show where a marble can go"
         detail="Rings the holes a lifted marble may land in, hop by hop."

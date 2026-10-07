@@ -21,7 +21,8 @@ Client-only **Vite + React + TypeScript** app with **no backend or server runtim
 - **`src/lib/ai/`**: a greedy one-move lookahead on distance to the goal apex with a straggler penalty.
 - **`src/lib/motion/`**: pure path sampling (eased horizontal travel, parabolic lift per leg) used by the canvas to fly marbles.
 - **`src/lib/palette/`**: marble names and colors per tip, shared by the canvas and the HTML overlay.
-- **`src/lib/options/`**: player preferences (currently `hints`, the move-guidance rings), parsed defensively from localStorage and saved on change. **`src/components/Options/`** is the panel, opened from the Options control at the top right during setup and play.
+- **`src/lib/theme/`**: the two looks, Tavern and Neon. A `Theme` owns the scene recipe (background, table, board kind, rim, holes, lights, exposure, marble glow, marker lightening) and the marble palette with names, so the canvas, the HUD, and the setup card all read `theme.marbles[zone]`. The HTML overlay follows through `data-theme` on `<html>` and CSS variables in `globals.css` (colors, font, heading weight); Neon uses Chakra Petch, Tavern uses Fraunces, both loaded in `index.html`. Changing the theme rebuilds the three.js scene (the mount effect depends on it).
+- **`src/lib/options/`**: player preferences (`hints`, the move-guidance rings, and `theme`), parsed defensively from localStorage and saved on change. **`src/components/Options/`** is the panel, opened from the Options control at the top right during setup and play.
 - **`src/utils/`**: `clamp`, `smoothstep`, `vibrateIfSupported`.
 
 Each module is a directory named after its primary export, containing `index.ts` and optionally `consts.ts`, `types.ts`, and `tests.ts`.
@@ -259,11 +260,11 @@ Beauty and delight are requirements, not polish to add later. Every surface shou
 
 **Haptics**: use the Vibration API (`navigator.vibrate`) where it adds weight to a physical moment (a marble landing), not as a reflex on every touch. Keep pulses short, and treat it as progressive enhancement; it is unsupported on iOS Safari, so nothing may depend on it.
 
-bargames has one committed aesthetic and every visual surface uses it: **a game table in a quiet bar at night**. Dark room, green felt, a warm wooden board, glass marbles that catch the light. Light comes from the lamp over the table and from the pieces, never from bright UI chrome. The interface is minimal and sits at the edges; the table is the picture. Writing tone: warm, brief, plain. "Your move." "Emerald wins."
+bargames has two committed looks, chosen in Options, and every visual surface follows the active one. **Tavern** (default): a game table in a quiet bar at night. Dark room, green felt, a warm wooden board, glass marbles that catch the light; light comes from the lamp over the table and from the pieces, never from bright UI chrome. **Neon**: after hours in a basement club. Near-black everything, a glowing grid floor, black lacquer board, magenta neon rim, marbles that emit their own color, cyan accents, a square techno face. In both, the interface is minimal and sits at the edges; the table is the picture. Writing tone: warm, brief, plain. "Your move." "Emerald wins." New visual work must be designed for both themes, through the `Theme` recipe and the CSS variables, never by special-casing one.
 
 Do not fall back on generic defaults for any surface. Banned AI-design tells:
 
-- **Color**: indigo/violet "AI purple," blue-to-purple gradients, oversized colored drop-shadows, cream/oatmeal (#faf8f5-family) backgrounds with coral/amber/terracotta accents, and timid evenly-spread palettes. Glow is allowed only as light in the world (a marble, the lamp), not as UI decoration.
+- **Color**: indigo/violet "AI purple," blue-to-purple gradients, oversized colored drop-shadows, cream/oatmeal (#faf8f5-family) backgrounds with coral/amber/terracotta accents, and timid evenly-spread palettes. Glow is allowed as light in the world (a marble, the lamp, a neon tube), and in Neon as a restrained text or button halo that reads as signage, not as generic UI decoration.
 - **Type**: Inter, Roboto, Geist, or system-default fonts; the friendly serif-plus-sans pairing; the lone-italic-serif-word accent inside a sans headline.
 - **Layout and components**: centered hero with a pill badge above the headline; three identical icon-topped feature cards; colored left-border cards; glassmorphism panels; shadcn/ui defaults; one uniform 16px radius on everything; emoji as nav or bullet icons; all-caps section labels; 1-2-3 numbered step rows; horizontal stat-banner rows.
 - **Copy**: vague lines like "Build the future" and hedged marketing filler.

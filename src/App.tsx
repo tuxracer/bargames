@@ -11,6 +11,7 @@ import { canUndo, INITIAL_MATCH, matchReducer } from "@/lib/match";
 import type { MatchAction } from "@/lib/match";
 import { loadOptions, saveOptions } from "@/lib/options";
 import type { Options } from "@/lib/options";
+import { getTheme } from "@/lib/theme";
 
 /** A beat before the computer plays, so its move reads as a reply. */
 const THINK_MS = 650;
@@ -28,9 +29,21 @@ export const App = () => {
   const [optionsOpen, setOptionsOpen] = useState(false);
   const game = match.game;
 
+  const theme = getTheme(options.theme);
+
   useEffect(() => {
     saveOptions(options);
   }, [options]);
+
+  // The HTML overlay takes its colors and type from the theme too.
+  useEffect(() => {
+    document.documentElement.dataset.theme = theme.id;
+    const meta = document.querySelector('meta[name="theme-color"]');
+    meta?.setAttribute(
+      "content",
+      `#${theme.scene.background.toString(16).padStart(6, "0")}`,
+    );
+  }, [theme]);
 
   const start = useCallback((next: readonly SeatKind[]) => {
     setKinds(next);
@@ -75,6 +88,7 @@ export const App = () => {
         state={game ?? LOBBY_BOARD}
         interactive={interactive}
         hints={options.hints}
+        theme={theme}
         onStep={handleStep}
         onHop={handleHop}
         onStop={handleStop}
@@ -83,6 +97,7 @@ export const App = () => {
       {game ? (
         <Hud
           game={game}
+          theme={theme}
           canUndo={settled && interactive && canUndo(match)}
           onUndo={() => play({ type: "undo" })}
           onStop={handleStop}
@@ -90,7 +105,7 @@ export const App = () => {
           onNewGame={() => dispatch({ type: "quit" })}
         />
       ) : (
-        <Setup onStart={start} />
+        <Setup theme={theme} onStart={start} />
       )}
       <button
         type="button"

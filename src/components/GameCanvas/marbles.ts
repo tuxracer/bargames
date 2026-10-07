@@ -7,7 +7,7 @@ import {
 } from "three";
 import { HOLES } from "@/lib/board";
 import type { GameState, Piece } from "@/lib/game";
-import { MARBLE_LOOKS } from "@/lib/palette";
+import type { Theme } from "@/lib/theme";
 import { MARBLE_RADIUS, MARBLE_REST_Y } from "./consts";
 
 export type Marble = {
@@ -30,13 +30,13 @@ export type MarbleSet = {
 
 const SELECT_GLOW = 0.35;
 
-export const createMarbleSet = (scene: Scene): MarbleSet => {
+export const createMarbleSet = (scene: Scene, theme: Theme): MarbleSet => {
   const geometry = new SphereGeometry(MARBLE_RADIUS, 40, 28);
   const byPiece = new Map<number, Marble>();
   const glow = new Color();
 
   const make = (state: GameState, piece: Piece): Marble => {
-    const look = MARBLE_LOOKS[state.seats[piece.seat].zone];
+    const look = theme.marbles[state.seats[piece.seat].zone];
     const material = new MeshPhysicalMaterial({
       color: look.hex,
       roughness: look.roughness,
@@ -45,6 +45,9 @@ export const createMarbleSet = (scene: Scene): MarbleSet => {
       clearcoatRoughness: 0.04,
       envMapIntensity: 1.1,
     });
+    // Marbles that glow keep a base emission; selection glow adds to it.
+    material.emissive.set(look.hex).multiplyScalar(theme.scene.marbleGlow);
+
     const mesh = new Mesh(geometry, material);
     mesh.castShadow = true;
     scene.add(mesh);
@@ -67,7 +70,9 @@ export const createMarbleSet = (scene: Scene): MarbleSet => {
   };
 
   const setGlow = (marble: Marble, amount: number) => {
-    glow.copy(marble.mesh.material.color).multiplyScalar(amount * SELECT_GLOW);
+    glow
+      .copy(marble.mesh.material.color)
+      .multiplyScalar(theme.scene.marbleGlow + amount * SELECT_GLOW);
     marble.mesh.material.emissive.copy(glow);
   };
 
@@ -76,7 +81,7 @@ export const createMarbleSet = (scene: Scene): MarbleSet => {
     for (const piece of state.pieces) {
       seen.add(piece.id);
       const existing = byPiece.get(piece.id);
-      const look = MARBLE_LOOKS[state.seats[piece.seat].zone];
+      const look = theme.marbles[state.seats[piece.seat].zone];
       if (existing && existing.mesh.material.color.getHex() === look.hex) {
         continue;
       }

@@ -1,4 +1,4 @@
-import { CanvasTexture, SRGBColorSpace } from "three";
+import { CanvasTexture, RepeatWrapping, SRGBColorSpace } from "three";
 
 const SIZE = 1_024;
 const GRAIN_LINES = 150;
@@ -90,5 +90,34 @@ export const createDimpleTexture = (): CanvasTexture | null => {
   ctx.fillRect(0, 0, size, size);
   const texture = new CanvasTexture(canvas);
   texture.colorSpace = SRGBColorSpace;
+  return texture;
+};
+
+/**
+ * A glowing grid for the neon table: thin lines on a transparent-black
+ * field, tiled across the surface as an emissive map.
+ */
+export const createGridTexture = (lineColor: string): CanvasTexture | null => {
+  const size = 256;
+  const canvas = document.createElement("canvas");
+  canvas.width = size;
+  canvas.height = size;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return null;
+  ctx.fillStyle = "#000";
+  ctx.fillRect(0, 0, size, size);
+  ctx.strokeStyle = lineColor;
+  ctx.lineWidth = 2;
+  ctx.globalAlpha = 0.55;
+  ctx.beginPath();
+  ctx.moveTo(1, 0);
+  ctx.lineTo(1, size);
+  ctx.moveTo(0, 1);
+  ctx.lineTo(size, 1);
+  ctx.stroke();
+  const texture = new CanvasTexture(canvas);
+  texture.colorSpace = SRGBColorSpace;
+  texture.wrapS = RepeatWrapping;
+  texture.wrapT = RepeatWrapping;
   return texture;
 };

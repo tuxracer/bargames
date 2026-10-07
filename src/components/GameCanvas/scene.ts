@@ -7,44 +7,44 @@ import {
   HemisphereLight,
   InstancedMesh,
   Mesh,
+  MeshBasicMaterial,
+  MeshPhysicalMaterial,
   MeshStandardMaterial,
   Object3D,
   PCFShadowMap,
   PerspectiveCamera,
   PlaneGeometry,
   PMREMGenerator,
+  RingGeometry,
   Scene,
   TorusGeometry,
   Vector3,
   WebGLRenderer,
   ACESFilmicToneMapping,
 } from "three";
+import type { Material, Texture } from "three";
 import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
 import { HOLES } from "@/lib/board";
-import { MARBLE_LOOKS } from "@/lib/palette";
+import type { Theme } from "@/lib/theme";
 import {
-  BACKGROUND,
   BOARD_DISC_RADIUS,
   BOARD_THICKNESS,
   BOARD_TOP,
   CAMERA_DISTANCE,
   CAMERA_ELEVATION,
   CAMERA_FOV,
-  FELT,
   FIT_MARGIN_X,
   FIT_MARGIN_Y,
-  GROUND_LIGHT,
   HOLE_RADIUS,
-  HOLE_WOOD,
-  KEY_LIGHT,
   MAX_PIXEL_RATIO,
   RIM_TUBE,
   SHADOW_MAP_SIZE,
-  SKY_LIGHT,
-  WOOD_SIDE,
-  ZONE_TINT,
 } from "./consts";
-import { createDimpleTexture, createWoodTexture } from "./woodTexture";
+import {
+  createDimpleTexture,
+  createGridTexture,
+  createWoodTexture,
+} from "./woodTexture";
 
 export type SceneHandle = {
   readonly renderer: WebGLRenderer;
@@ -56,25 +56,35 @@ export type SceneHandle = {
 };
 
 const FIT_SAMPLES = 24;
+const TABLE_SIZE = 80;
+const GRID_REPEAT = 20;
+const HOLE_RING_INNER = 0.3;
+const HOLE_RING_OUTER = 0.37;
 
-/** Everything static: lights, the felt table, the wooden board, its holes. */
-export const createScene = (canvas: HTMLCanvasElement): SceneHandle => {
+/** Everything static: lights, the table, the board, its holes. */
+export const createScene = (
+  canvas: HTMLCanvasElement,
+  theme: Theme,
+): SceneHandle => {
+  const look = theme.scene;
+  const textures: (Texture | null)[] = [];
+
   const renderer = new WebGLRenderer({ canvas, antialias: true });
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, MAX_PIXEL_RATIO));
   renderer.toneMapping = ACESFilmicToneMapping;
-  renderer.toneMappingExposure = 1.0;
+  renderer.toneMappingExposure = look.exposure;
   renderer.shadowMap.enabled = true;
   renderer.shadowMap.type = PCFShadowMap;
 
   const scene = new Scene();
-  scene.background = new Color(BACKGROUND);
-  scene.fog = new Fog(BACKGROUND, 22, 48);
+  scene.background = new Color(look.background);
+  scene.fog = new Fog(look.background, 22, 48);
 
   const pmrem = new PMREMGenerator(renderer);
   const environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
   pmrem.dispose();
   scene.environment = environment;
-  scene.environmentIntensity = 0.4;
+  scene.environmentIntensity = look.environmentIntensity;
 
   const camera = new PerspectiveCamera(CAMERA_FOV, 1, 0.5, 80);
   camera.position.set(
@@ -84,8 +94,8 @@ export const createScene = (canvas: HTMLCanvasElement): SceneHandle => {
   );
   camera.lookAt(0, BOARD_TOP, 0);
 
-  const key = new DirectionalLight(KEY_LIGHT, 3.2);
-  key.position.set(-7, 13, 9);
+  const key = new DirectionalLight(look.key.color, look.key.intensity);
+  key.position.set(...look.key.position);
   key.castShadow = true;
   key.shadow.mapSize.set(SHADOW_MAP_SIZE, SHADOW_MAP_SIZE);
   key.shadow.camera.left = -BOARD_DISC_RADIUS - 1;
@@ -96,29 +106,62 @@ export const createScene = (canvas: HTMLCanvasElement): SceneHandle => {
   key.shadow.camera.far = 40;
   key.shadow.bias = -0.0008;
   key.shadow.normalBias = 0.02;
-  key.shadow.radius = 3;
   scene.add(key, key.target);
 
-  const sky = new HemisphereLight(SKY_LIGHT, GROUND_LIGHT, 0.5);
+  const sky = new HemisphereLight(
+    look.hemisphere.sky,
+    look.hemisphere.ground,
+    look.hemisphere.intensity,
+  );
   scene.add(sky);
 
-  const felt = new Mesh(
-    new PlaneGeometry(80, 80),
-    new MeshStandardMaterial({ color: FELT, roughness: 1, metalness: 0 }),
-  );
-  felt.rotation.x = -Math.PI / 2;
-  felt.receiveShadow = true;
-  scene.add(felt);
-
-  const woodTexture = createWoodTexture();
-  const woodTop = new MeshStandardMaterial({
-    color: woodTexture ? 0xffffff : 0x8f552c,
-    map: woodTexture,
-    roughness: 0.42,
+  const tableMaterial = new MeshStandardMaterial({
+    color: look.table.color,
+    roughness: 1,
     metalness: 0,
   });
-  const woodSide = new MeshStandardMaterial({
-    color: WOOD_SIDE,
+  if (look.table.grid !== null) {
+    const grid = createGridTexture(
+      `#${look.table.grid.toString(16).padStart(6, "0")}`,
+    );
+    textures.push(grid);
+    if (grid) {
+      grid.repeat.set(GRID_REPEAT, GRID_REPEAT);
+      tableMaterial.emissive.set(0xffffff);
+      tableMaterial.emissiveMap = grid;
+      tableMaterial.emissiveIntensity = 0.45;
+      tableMaterial.roughness = 0.6;
+    }
+  }
+  const table = new Mesh(
+    new PlaneGeometry(TABLE_SIZE, TABLE_SIZE),
+    tableMaterial,
+  );
+  table.rotation.x = -Math.PI / 2;
+  table.receiveShadow = true;
+  scene.add(table);
+
+  let boardTop: Material;
+  if (look.board.kind === "wood") {
+    const wood = createWoodTexture();
+    textures.push(wood);
+    boardTop = new MeshStandardMaterial({
+      color: wood ? look.board.color : 0x8f552c,
+      map: wood,
+      roughness: 0.42,
+      metalness: 0,
+    });
+  } else {
+    boardTop = new MeshPhysicalMaterial({
+      color: look.board.color,
+      roughness: 0.25,
+      metalness: 0.1,
+      clearcoat: 1,
+      clearcoatRoughness: 0.08,
+    });
+  }
+  const boardSide = new MeshStandardMaterial({
+    color: look.board.side,
     roughness: 0.6,
     metalness: 0,
   });
@@ -129,7 +172,7 @@ export const createScene = (canvas: HTMLCanvasElement): SceneHandle => {
       BOARD_THICKNESS,
       128,
     ),
-    [woodSide, woodTop, woodSide],
+    [boardSide, boardTop, boardSide],
   );
   board.position.y = BOARD_THICKNESS / 2;
   board.receiveShadow = true;
@@ -138,7 +181,13 @@ export const createScene = (canvas: HTMLCanvasElement): SceneHandle => {
 
   const rim = new Mesh(
     new TorusGeometry(BOARD_DISC_RADIUS - RIM_TUBE * 0.6, RIM_TUBE, 12, 160),
-    new MeshStandardMaterial({ color: 0x6b3d1f, roughness: 0.35 }),
+    new MeshStandardMaterial({
+      color: look.rim.color,
+      emissive: look.rim.emissive,
+      emissiveIntensity: look.rim.emissiveIntensity,
+      roughness: 0.35,
+      toneMapped: look.rim.emissiveIntensity === 0,
+    }),
   );
   rim.rotation.x = Math.PI / 2;
   rim.position.y = BOARD_TOP;
@@ -146,29 +195,56 @@ export const createScene = (canvas: HTMLCanvasElement): SceneHandle => {
   scene.add(rim);
 
   const dimple = createDimpleTexture();
+  textures.push(dimple);
   const holes = new InstancedMesh(
     new CircleGeometry(HOLE_RADIUS, 28),
     new MeshStandardMaterial({ map: dimple, roughness: 0.85, metalness: 0 }),
     HOLES.length,
   );
   holes.receiveShadow = true;
+  const rings = look.holes.rings
+    ? new InstancedMesh(
+        new RingGeometry(HOLE_RING_INNER, HOLE_RING_OUTER, 32),
+        new MeshBasicMaterial({ toneMapped: false }),
+        HOLES.length,
+      )
+    : null;
   const placer = new Object3D();
-  const wood = new Color(HOLE_WOOD);
+  const base = new Color(look.holes.base);
   const tint = new Color();
+  const lit = new Color();
   for (const hole of HOLES) {
     placer.position.set(hole.px, BOARD_TOP + 0.004, hole.py);
     placer.rotation.set(-Math.PI / 2, 0, 0);
     placer.updateMatrix();
     holes.setMatrixAt(hole.index, placer.matrix);
-    tint.copy(wood);
+    tint.copy(base);
     if (hole.zone !== null) {
-      tint.lerp(new Color(MARBLE_LOOKS[hole.zone].hex), ZONE_TINT);
+      tint.lerp(new Color(theme.marbles[hole.zone].hex), look.holes.zoneTint);
     }
     holes.setColorAt(hole.index, tint);
+    if (rings) {
+      placer.position.y = BOARD_TOP + 0.008;
+      placer.updateMatrix();
+      rings.setMatrixAt(hole.index, placer.matrix);
+      lit
+        .set(
+          hole.zone === null
+            ? (look.table.grid ?? base)
+            : theme.marbles[hole.zone].hex,
+        )
+        .multiplyScalar(hole.zone === null ? 0.5 : 0.8);
+      rings.setColorAt(hole.index, lit);
+    }
   }
   holes.instanceMatrix.needsUpdate = true;
   if (holes.instanceColor) holes.instanceColor.needsUpdate = true;
   scene.add(holes);
+  if (rings) {
+    rings.instanceMatrix.needsUpdate = true;
+    if (rings.instanceColor) rings.instanceColor.needsUpdate = true;
+    scene.add(rings);
+  }
 
   const sample = new Vector3();
   const resize = (width: number, height: number) => {
@@ -204,8 +280,7 @@ export const createScene = (canvas: HTMLCanvasElement): SceneHandle => {
         for (const material of materials) material.dispose();
       }
     });
-    woodTexture?.dispose();
-    dimple?.dispose();
+    for (const texture of textures) texture?.dispose();
     environment.dispose();
     renderer.dispose();
   };

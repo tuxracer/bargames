@@ -29,7 +29,7 @@ const PULSE_PERIOD_MS = 1_100;
 const PULSE_AMOUNT = 0.07;
 const MARKER_Y = BOARD_TOP + 0.012;
 
-export const createMarkerSet = (scene: Scene): MarkerSet => {
+export const createMarkerSet = (scene: Scene, lighten: number): MarkerSet => {
   const ringMaterial = new MeshBasicMaterial({
     color: 0xffffff,
     transparent: true,
@@ -81,7 +81,7 @@ export const createMarkerSet = (scene: Scene): MarkerSet => {
   const show = (holes: readonly number[], color: number) => {
     shown = holes;
     rings.count = holes.length;
-    lightened.setHex(color).lerp(new Color(0xffffff), 0.25);
+    lightened.setHex(color).lerp(new Color(0xffffff), lighten);
     ringMaterial.color.copy(lightened);
     targetMaterial.color.copy(lightened);
     layout(1);

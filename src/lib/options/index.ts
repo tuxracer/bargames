@@ -1,4 +1,5 @@
-import { isPlainObject } from "remeda";
+import { isBoolean, isPlainObject } from "remeda";
+import { isThemeId } from "@/lib/theme";
 import { DEFAULT_OPTIONS, OPTIONS_STORAGE_KEY } from "./consts";
 import { isOptions } from "./types";
 import type { Options } from "./types";
@@ -25,8 +26,9 @@ export const parseOptions = (raw: string | null): Options => {
 };
 
 const pickKnown = (record: Record<string, unknown>): Partial<Options> => {
-  const known: { hints?: boolean } = {};
-  if (typeof record.hints === "boolean") known.hints = record.hints;
+  const known: { hints?: boolean; theme?: Options["theme"] } = {};
+  if (isBoolean(record.hints)) known.hints = record.hints;
+  if (isThemeId(record.theme)) known.theme = record.theme;
   return known;
 };
 

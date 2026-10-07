@@ -1,9 +1,10 @@
 import { canStop } from "@/lib/game";
 import type { GameState } from "@/lib/game";
-import { MARBLE_LOOKS } from "@/lib/palette";
+import type { Theme } from "@/lib/theme";
 
 type HudProps = {
   game: GameState;
+  theme: Theme;
   canUndo: boolean;
   onUndo: () => void;
   onStop: () => void;
@@ -11,15 +12,15 @@ type HudProps = {
   onNewGame: () => void;
 };
 
-const statusLine = (game: GameState): string => {
+const statusLine = (game: GameState, theme: Theme): string => {
   const humans = game.seats.filter((seat) => seat.kind === "human").length;
   if (game.winner !== null) {
     const seat = game.seats[game.winner];
     if (seat.kind === "human" && humans === 1) return "You win.";
-    return `${MARBLE_LOOKS[seat.zone].name} wins.`;
+    return `${theme.marbles[seat.zone].name} wins.`;
   }
   const seat = game.seats[game.current];
-  const name = MARBLE_LOOKS[seat.zone].name;
+  const name = theme.marbles[seat.zone].name;
   if (seat.kind === "computer") return `${name} is thinking`;
   if (game.chain !== null) {
     return canStop(game) ? "Hop again, or stop here" : "Keep hopping";
@@ -30,6 +31,7 @@ const statusLine = (game: GameState): string => {
 /** Whose turn it is, and the few things you can do besides play. */
 export const Hud = ({
   game,
+  theme,
   canUndo,
   onUndo,
   onStop,
@@ -38,7 +40,7 @@ export const Hud = ({
 }: HudProps) => {
   const over = game.winner !== null;
   const seat = game.seats[over ? (game.winner as number) : game.current];
-  const look = MARBLE_LOOKS[seat.zone];
+  const look = theme.marbles[seat.zone];
   const midChain = !over && game.chain !== null;
 
   return (
@@ -47,7 +49,7 @@ export const Hud = ({
         <p className="wordmark">bargames</p>
         <p className={over ? "status status-over" : "status"}>
           <span className="status-marble" style={{ background: look.css }} />
-          {statusLine(game)}
+          {statusLine(game, theme)}
         </p>
       </header>
       <footer className="hud-bottom">

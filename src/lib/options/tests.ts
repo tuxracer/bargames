@@ -10,15 +10,23 @@ describe("parseOptions", () => {
   });
 
   it("keeps a stored choice and fills in anything missing", () => {
-    expect(parseOptions('{"hints":false}')).toEqual({ hints: false });
+    expect(parseOptions('{"hints":false}')).toEqual({
+      ...DEFAULT_OPTIONS,
+      hints: false,
+    });
+    expect(parseOptions('{"theme":"neon"}')).toEqual({
+      ...DEFAULT_OPTIONS,
+      theme: "neon",
+    });
+    expect(parseOptions('{"theme":"lava"}')).toEqual(DEFAULT_OPTIONS);
     expect(parseOptions('{"unrelated":1}')).toEqual(DEFAULT_OPTIONS);
   });
 });
 
 describe("saveOptions and loadOptions", () => {
   it("round-trip through storage", () => {
-    saveOptions({ hints: false });
-    expect(loadOptions()).toEqual({ hints: false });
+    saveOptions({ hints: false, theme: "neon" });
+    expect(loadOptions()).toEqual({ hints: false, theme: "neon" });
     saveOptions(DEFAULT_OPTIONS);
     expect(loadOptions()).toEqual(DEFAULT_OPTIONS);
   });

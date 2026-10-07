@@ -2,11 +2,40 @@
   --ink: #0d0b0e;
   --paper: #efe6d6;
   --paper-dim: rgba(239, 230, 214, 0.62);
-  --amber: #f5a623;
-  --amber-dim: rgba(245, 166, 35, 0.45);
+  --accent: #f5a623;
+  --accent-dim: rgba(245, 166, 35, 0.45);
   --panel: #171215;
   --panel-edge: #3b2a1f;
   --font: "Fraunces", Georgia, "Times New Roman", serif;
+  --heading-weight: 600;
+  --heading-tracking: 0;
+}
+
+/* After hours: black, neon, a square techno face. */
+:root[data-theme="neon"] {
+  --ink: #030308;
+  --paper: #e9f7ff;
+  --paper-dim: rgba(233, 247, 255, 0.6);
+  --accent: #19e6ff;
+  --accent-dim: rgba(25, 230, 255, 0.45);
+  --panel: #07070f;
+  --panel-edge: #1e2a4a;
+  --font: "Chakra Petch", "Fraunces", sans-serif;
+  --heading-weight: 700;
+  --heading-tracking: 0.02em;
+}
+
+:root[data-theme="neon"] .wordmark,
+:root[data-theme="neon"] .setup-eyebrow {
+  text-shadow: 0 0 10px rgba(25, 230, 255, 0.6);
+}
+
+:root[data-theme="neon"] .button-primary {
+  box-shadow: 0 0 18px rgba(25, 230, 255, 0.35);
+}
+
+:root[data-theme="neon"] .status-over {
+  text-shadow: 0 0 14px rgba(255, 43, 214, 0.7);
 }
 
 * {
@@ -79,7 +108,7 @@ button {
   font-size: 0.8rem;
   font-weight: 300;
   letter-spacing: 0.32em;
-  color: var(--amber);
+  color: var(--accent);
   opacity: 0.8;
 }
 
@@ -124,10 +153,10 @@ button {
 
 .button {
   padding: 0.65rem 1.25rem;
-  border: 1px solid var(--amber-dim);
+  border: 1px solid var(--accent-dim);
   border-radius: 10px;
   background: rgba(13, 11, 14, 0.75);
-  color: var(--amber);
+  color: var(--accent);
   font-size: 0.95rem;
   letter-spacing: 0.02em;
   cursor: pointer;
@@ -147,9 +176,9 @@ button {
 }
 
 .button-primary {
-  background: var(--amber);
+  background: var(--accent);
   color: var(--ink);
-  border-color: var(--amber);
+  border-color: var(--accent);
   font-weight: 600;
 }
 
@@ -180,13 +209,14 @@ button {
   font-size: 0.75rem;
   font-weight: 300;
   letter-spacing: 0.32em;
-  color: var(--amber);
+  color: var(--accent);
   opacity: 0.8;
 }
 
 .setup-title {
   font-size: 2.1rem;
-  font-weight: 600;
+  font-weight: var(--heading-weight);
+  letter-spacing: var(--heading-tracking);
   line-height: 1.05;
   margin-top: -0.6rem;
 }
@@ -230,7 +260,7 @@ button {
 }
 
 .segment-selected {
-  background: var(--amber);
+  background: var(--accent);
   color: var(--ink);
   font-weight: 600;
 }
@@ -279,7 +309,7 @@ button {
   border: 1px solid transparent;
   border-radius: 8px;
   background: transparent;
-  color: var(--amber);
+  color: var(--accent);
   font-size: 0.85rem;
   opacity: 0.7;
   cursor: pointer;
@@ -291,9 +321,68 @@ button {
 
 .panel-title {
   font-size: 1.5rem;
-  font-weight: 600;
+  font-weight: var(--heading-weight);
+  letter-spacing: var(--heading-tracking);
   line-height: 1.1;
   margin-top: -0.5rem;
+}
+
+.theme-list {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.theme-choice {
+  display: flex;
+  align-items: center;
+  gap: 0.9rem;
+  width: 100%;
+  padding: 0.7rem 0.8rem;
+  border: 1px solid var(--panel-edge);
+  border-radius: 10px;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 160ms ease;
+}
+
+.theme-choice-selected {
+  border-color: var(--accent);
+}
+
+.theme-swatch {
+  display: inline-flex;
+  flex: none;
+  gap: 0.25rem;
+}
+
+.theme-swatch-dot {
+  width: 0.8rem;
+  height: 0.8rem;
+  border-radius: 50%;
+  background-image: radial-gradient(
+    circle at 32% 28%,
+    rgba(255, 255, 255, 0.85),
+    rgba(255, 255, 255, 0.1) 35%,
+    rgba(0, 0, 0, 0.25) 100%
+  );
+}
+
+/* Each choice previews its own look, whatever theme is active. */
+.theme-choice[data-theme="tavern"] {
+  background: #141017;
+}
+
+.theme-choice[data-theme="neon"] {
+  background: #04040c;
+}
+
+.theme-text {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
 }
 
 .toggle-row {
@@ -350,8 +439,8 @@ button {
 }
 
 .toggle-on {
-  background: var(--amber);
-  border-color: var(--amber);
+  background: var(--accent);
+  border-color: var(--accent);
 }
 
 .toggle-on .toggle-knob {

@@ -1,9 +1,10 @@
 import { useState } from "react";
 import { SEAT_LAYOUTS } from "@/lib/game";
 import type { PlayerCount, SeatKind } from "@/lib/game";
-import { MARBLE_LOOKS } from "@/lib/palette";
+import type { Theme } from "@/lib/theme";
 
 type SetupProps = {
+  theme: Theme;
   onStart: (kinds: readonly SeatKind[]) => void;
 };
 
@@ -16,7 +17,7 @@ const defaultKinds = (count: PlayerCount): SeatKind[] => {
 };
 
 /** The table before the game: how many sit down, and which are people. */
-export const Setup = ({ onStart }: SetupProps) => {
+export const Setup = ({ theme, onStart }: SetupProps) => {
   const [count, setCount] = useState<PlayerCount>(2);
   const [kinds, setKinds] = useState<SeatKind[]>(() => defaultKinds(2));
 
@@ -64,7 +65,7 @@ export const Setup = ({ onStart }: SetupProps) => {
 
         <ul className="seat-list">
           {SEAT_LAYOUTS[count].map((zone, index) => {
-            const look = MARBLE_LOOKS[zone];
+            const look = theme.marbles[zone];
             const kind = kinds[index];
             return (
               <li key={zone} className="seat-row">

@@ -12,7 +12,7 @@ import {
   sampleMotion,
 } from "@/lib/motion";
 import type { Point2 } from "@/lib/motion";
-import { MARBLE_LOOKS } from "@/lib/palette";
+import type { Theme } from "@/lib/theme";
 import { vibrateIfSupported } from "@/utils/vibrateIfSupported";
 import {
   BOARD_DISC_RADIUS,
@@ -39,6 +39,8 @@ type GameCanvasProps = {
   interactive: boolean;
   /** Ring the holes a lifted marble may go to. Off is for purists. */
   hints: boolean;
+  /** How the table is dressed. Changing it rebuilds the scene. */
+  theme: Theme;
   /** The player stepped a marble into an adjacent hole; the turn ends. */
   onStep: (piece: number, hole: HoleIndex) => void;
   /** The player hopped a marble; the chain stays open if it can. */
@@ -129,6 +131,7 @@ export const GameCanvas = ({
   state,
   interactive,
   hints,
+  theme,
   onStep,
   onHop,
   onStop,
@@ -165,11 +168,11 @@ export const GameCanvas = ({
     const canvas = canvasRef.current;
     if (!container || !canvas) return;
 
-    const handle = createScene(canvas);
+    const handle = createScene(canvas, theme);
     const rig: Rig = {
       handle,
-      marbles: createMarbleSet(handle.scene),
-      markers: createMarkerSet(handle.scene),
+      marbles: createMarbleSet(handle.scene, theme),
+      markers: createMarkerSet(handle.scene, theme.scene.markerLighten),
       picker: createPicker(canvas, handle.camera),
       flight: null,
       selection: null,
@@ -205,7 +208,7 @@ export const GameCanvas = ({
         hops,
         destinations: [...steps, ...hops],
       };
-      const color = MARBLE_LOOKS[current.seats[current.current].zone].hex;
+      const color = theme.marbles[current.seats[current.current].zone].hex;
       if (hintsRef.current) {
         rig.markers.show(rig.selection.destinations, color);
       }
@@ -442,8 +445,9 @@ export const GameCanvas = ({
       rig.markers.dispose();
       handle.dispose();
       rigRef.current = null;
+      previousStateRef.current = null;
     };
-  }, []);
+  }, [theme]);
 
   // Bring the table in line with the game: new marbles appear at rest, the
   // marble that just traveled flies the legs it has not yet shown, and
@@ -505,7 +509,7 @@ export const GameCanvas = ({
       }
     }
     if (!animated) settled();
-  }, [state, interactive]);
+  }, [state, interactive, theme]);
 
   // Flipping the hints option mid-selection redraws (or clears) the rings.
   useEffect(() => {

@@ -32,16 +32,6 @@ export const CAMERA_DISTANCE = 26;
 export const FIT_MARGIN_X = 0.9;
 export const FIT_MARGIN_Y = 0.78;
 
-/** Colors. */
-export const BACKGROUND = 0x0d0b0e;
-export const FELT = 0x183826;
-export const WOOD_SIDE = 0x3f2412;
-export const HOLE_WOOD = 0x6a452a;
-export const ZONE_TINT = 0.45;
-export const KEY_LIGHT = 0xffe0b8;
-export const SKY_LIGHT = 0x5e6f9e;
-export const GROUND_LIGHT = 0x3a2416;
-
 export const MAX_PIXEL_RATIO = 2;
 export const SHADOW_MAP_SIZE = 1_024;
 
