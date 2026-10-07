@@ -1,4 +1,4 @@
-# bargames
+# neongames
 
 Board games for a bar table, played in the browser. Designed for phones and touch screens first (portrait, one thumb, drag and drop); it also works on desktop with a mouse. Built with Vite + React + TypeScript, rendered with three.js, shipped as a static build, hosted on Vercel. The first and so far only game is **Chinese Checkers**; the repo is laid out so more table games can join it.
 
@@ -262,7 +262,7 @@ Beauty and delight are requirements, not polish to add later. Every surface shou
 
 **Haptics**: use the Vibration API (`navigator.vibrate`) where it adds weight to a physical moment (a marble landing), not as a reflex on every touch. Keep pulses short, and treat it as progressive enhancement; it is unsupported on iOS Safari, so nothing may depend on it.
 
-bargames has two committed looks, chosen in Options, and every visual surface follows the active one. **Tavern** (default): a game table in a quiet bar at night. Dark room, green felt, a warm wooden board, glass marbles that catch the light; light comes from the lamp over the table and from the pieces, never from bright UI chrome. **Neon**: after hours in a basement club. Near-black everything, a glowing grid floor, black lacquer board, magenta neon rim, marbles that emit their own color, cyan accents, a square techno face. In both, the interface is minimal and sits at the edges; the table is the picture. Writing tone: warm, brief, plain. "Your move." "Emerald wins." New visual work must be designed for both themes, through the `Theme` recipe and the CSS variables, never by special-casing one.
+neongames has two committed looks, chosen in Options, and every visual surface follows the active one. **Tavern** (default): a game table in a quiet bar at night. Dark room, green felt, a warm wooden board, glass marbles that catch the light; light comes from the lamp over the table and from the pieces, never from bright UI chrome. **Neon**: after hours in a basement club. Near-black everything, a glowing grid floor, black lacquer board, magenta neon rim, marbles that emit their own color, cyan accents, a square techno face. In both, the interface is minimal and sits at the edges; the table is the picture. Writing tone: warm, brief, plain. "Your move." "Emerald wins." New visual work must be designed for both themes, through the `Theme` recipe and the CSS variables, never by special-casing one.
 
 Do not fall back on generic defaults for any surface. Banned AI-design tells:
 

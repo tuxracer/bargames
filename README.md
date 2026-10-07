@@ -1,4 +1,4 @@
-# bargames
+# neongames
 
 Board games for a bar table, played in the browser. The first game is Chinese Checkers.
 
@@ -14,7 +14,7 @@ Open it on a phone, drag a marble, and let go over a glowing hole. The board is 
 
 ## Install it
 
-bargames is a Progressive Web App. Open it once in a browser and add it to your home screen (Share, then "Add to Home Screen" on iOS; the install prompt or the browser menu on Android and desktop). After that it opens full screen like a native app and works with no connection at all: the code, the fonts, and the icons are all cached on first visit, and updates install themselves the next time you open it online.
+neongames is a Progressive Web App. Open it once in a browser and add it to your home screen (Share, then "Add to Home Screen" on iOS; the install prompt or the browser menu on Android and desktop). After that it opens full screen like a native app and works with no connection at all: the code, the fonts, and the icons are all cached on first visit, and updates install themselves the next time you open it online.
 
 ## Tech
 

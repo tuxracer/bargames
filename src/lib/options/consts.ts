@@ -6,4 +6,4 @@ export const DEFAULT_OPTIONS: Options = {
   theme: DEFAULT_THEME_ID,
 };
 
-export const OPTIONS_STORAGE_KEY = "bargames.options";
+export const OPTIONS_STORAGE_KEY = "neongames.options";

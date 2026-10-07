@@ -40,8 +40,8 @@ export default defineConfig({
       includeAssets: ["icon.svg", "icons/*.png", "icons/*.svg"],
       manifest: {
         id: "/",
-        name: "bargames",
-        short_name: "bargames",
+        name: "neongames",
+        short_name: "neongames",
         description:
           "Chinese Checkers on a wooden board at a bar table. Drag your marbles across the star.",
         start_url: "/",

@@ -46,7 +46,7 @@ export const Hud = ({
   return (
     <>
       <header className="hud-top">
-        <p className="wordmark">bargames</p>
+        <p className="wordmark">neongames</p>
         <p className={over ? "status status-over" : "status"}>
           <span className="status-marble" style={{ background: look.css }} />
           {statusLine(game, theme)}
