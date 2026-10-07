@@ -4,6 +4,7 @@ import type { MusicStatus } from "@/components/GameCanvas";
 import { Hud } from "@/components/Hud";
 import { OptionsPanel } from "@/components/Options";
 import { Setup } from "@/components/Setup";
+import { VisualsPanel } from "@/components/Visuals";
 import { chooseMove } from "@/lib/ai";
 import type { HoleIndex, Zone } from "@/lib/board";
 import { createGame } from "@/lib/game";
@@ -16,6 +17,9 @@ import { getTheme } from "@/lib/theme";
 
 /** A beat before the computer plays, so its move reads as a reply. */
 const THINK_MS = 650;
+
+/** Which card is open over the table, if any. */
+type Panel = "none" | "options" | "visuals";
 
 /**
  * Pass and play: which side of the table the view leans toward. The human
@@ -42,7 +46,7 @@ export const App = () => {
   // computer waits for it.
   const [settled, setSettled] = useState(true);
   const [options, setOptions] = useState<Options>(loadOptions);
-  const [optionsOpen, setOptionsOpen] = useState(false);
+  const [panel, setPanel] = useState<Panel>("none");
   const [musicStatus, setMusicStatus] = useState<MusicStatus>("off");
   const game = match.game;
 
@@ -111,6 +115,8 @@ export const App = () => {
         theme={theme}
         viewZone={viewZone}
         music={options.music}
+        sensitivity={options.sensitivity}
+        visuals={options.visuals}
         onMusicStatus={setMusicStatus}
         onStep={handleStep}
         onHop={handleHop}
@@ -134,7 +140,7 @@ export const App = () => {
       <button
         type="button"
         className="options-button"
-        onClick={() => setOptionsOpen(true)}
+        onClick={() => setPanel("options")}
       >
         Options
       </button>
@@ -145,12 +151,22 @@ export const App = () => {
           <span />
         </div>
       )}
-      {optionsOpen && (
+      {panel === "options" && (
         <OptionsPanel
           options={options}
           musicStatus={musicStatus}
           onChange={setOptions}
-          onClose={() => setOptionsOpen(false)}
+          onVisuals={() => setPanel("visuals")}
+          onClose={() => setPanel("none")}
+        />
+      )}
+      {panel === "visuals" && (
+        <VisualsPanel
+          options={options}
+          musicStatus={musicStatus}
+          onChange={setOptions}
+          onBack={() => setPanel("options")}
+          onClose={() => setPanel("none")}
         />
       )}
     </>

@@ -76,12 +76,24 @@ export type MusicTheme = {
   readonly halo: number;
   /** How much a marble swells as a wave passes. */
   readonly swell: number;
-  /** Rim emission added per unit of bass. */
+  /** How high a resting marble jumps as a wave passes, in hole spacings. */
+  readonly bounce: number;
+  /** How much every marble's own glow breathes with the bass. */
+  readonly breathe: number;
+  /** Rim emission swing per unit of bass. */
   readonly rimPulse: number;
+  /** How bright the rim wears the spectrum as a ring; 0 leaves it plain. */
+  readonly rimSpectrum: number;
   /** Grid floor emission added per unit of bass. */
   readonly gridPulse: number;
+  /** How bright a wave's ring is as it runs out along the grid lines. */
+  readonly gridRipple: number;
+  /** Extra light on the hole rings as a wave passes. */
+  readonly ringGlow: number;
   /** Key light intensity swing per unit of bass. */
   readonly keyPulse: number;
+  /** How far the room's dark flashes toward the beat's color on a hit. */
+  readonly roomFlash: number;
 };
 
 export type Theme = {

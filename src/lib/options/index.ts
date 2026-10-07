@@ -1,8 +1,13 @@
 import { isBoolean, isPlainObject } from "remeda";
+import { isSensitivity } from "@/lib/beat";
 import { isThemeId } from "@/lib/theme";
-import { DEFAULT_OPTIONS, OPTIONS_STORAGE_KEY } from "./consts";
-import { isOptions } from "./types";
-import type { Options } from "./types";
+import {
+  DEFAULT_OPTIONS,
+  DEFAULT_VISUALS,
+  OPTIONS_STORAGE_KEY,
+} from "./consts";
+import { isOptions, VISUAL_ASPECTS } from "./types";
+import type { Options, Visuals } from "./types";
 
 export * from "./consts";
 export * from "./types";
@@ -25,16 +30,33 @@ export const parseOptions = (raw: string | null): Options => {
   return DEFAULT_OPTIONS;
 };
 
+/** The stored visuals, aspect by aspect, with the defaults for the rest. */
+const pickVisuals = (value: unknown): Visuals => {
+  if (!isPlainObject(value)) return DEFAULT_VISUALS;
+  const visuals = { ...DEFAULT_VISUALS };
+  for (const aspect of VISUAL_ASPECTS) {
+    const stored = value[aspect];
+    if (isBoolean(stored)) visuals[aspect] = stored;
+  }
+  return visuals;
+};
+
 const pickKnown = (record: Record<string, unknown>): Partial<Options> => {
   const known: {
     hints?: boolean;
     theme?: Options["theme"];
     music?: boolean;
+    sensitivity?: Options["sensitivity"];
+    visuals?: Visuals;
     facePlayer?: boolean;
   } = {};
   if (isBoolean(record.hints)) known.hints = record.hints;
   if (isThemeId(record.theme)) known.theme = record.theme;
   if (isBoolean(record.music)) known.music = record.music;
+  if (isSensitivity(record.sensitivity)) {
+    known.sensitivity = record.sensitivity;
+  }
+  if ("visuals" in record) known.visuals = pickVisuals(record.visuals);
   if (isBoolean(record.facePlayer)) known.facePlayer = record.facePlayer;
   return known;
 };

@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { DEFAULT_OPTIONS, loadOptions, parseOptions, saveOptions } from ".";
+import {
+  DEFAULT_OPTIONS,
+  DEFAULT_VISUALS,
+  loadOptions,
+  parseOptions,
+  saveOptions,
+} from ".";
 
 describe("parseOptions", () => {
   it("falls back to the defaults when nothing or junk is stored", () => {
@@ -21,6 +27,21 @@ describe("parseOptions", () => {
     expect(parseOptions('{"theme":"lava"}')).toEqual(DEFAULT_OPTIONS);
     expect(parseOptions('{"unrelated":1}')).toEqual(DEFAULT_OPTIONS);
   });
+
+  it("keeps the music settings aspect by aspect", () => {
+    expect(parseOptions('{"sensitivity":"high"}')).toEqual({
+      ...DEFAULT_OPTIONS,
+      sensitivity: "high",
+    });
+    expect(parseOptions('{"sensitivity":"deafening"}')).toEqual(
+      DEFAULT_OPTIONS,
+    );
+    expect(parseOptions('{"visuals":{"bounce":false,"rim":"no"}}')).toEqual({
+      ...DEFAULT_OPTIONS,
+      visuals: { ...DEFAULT_VISUALS, bounce: false },
+    });
+    expect(parseOptions('{"visuals":7}')).toEqual(DEFAULT_OPTIONS);
+  });
 });
 
 describe("saveOptions and loadOptions", () => {
@@ -29,6 +50,8 @@ describe("saveOptions and loadOptions", () => {
       hints: false,
       theme: "neon",
       music: true,
+      sensitivity: "low",
+      visuals: { ...DEFAULT_VISUALS, floor: false },
       facePlayer: true,
     } as const;
     saveOptions(chosen);

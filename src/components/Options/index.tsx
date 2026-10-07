@@ -1,4 +1,6 @@
 import type { MusicStatus } from "@/components/GameCanvas";
+import { Toggle } from "@/components/Toggle";
+import { MUSIC_STATUS_LINES } from "@/components/Visuals";
 import type { Options } from "@/lib/options";
 import { THEME_LIST } from "@/lib/theme";
 
@@ -6,46 +8,17 @@ type OptionsPanelProps = {
   options: Options;
   musicStatus: MusicStatus;
   onChange: (options: Options) => void;
+  /** Open the music and lights settings. */
+  onVisuals: () => void;
   onClose: () => void;
 };
 
-type ToggleProps = {
-  label: string;
-  detail: string;
-  checked: boolean;
-  onToggle: () => void;
-};
-
-const Toggle = ({ label, detail, checked, onToggle }: ToggleProps) => (
-  <button
-    type="button"
-    className="toggle-row"
-    aria-pressed={checked}
-    onClick={onToggle}
-  >
-    <span className="toggle-text">
-      <span className="toggle-label">{label}</span>
-      <span className="toggle-detail">{detail}</span>
-    </span>
-    <span className={checked ? "toggle toggle-on" : "toggle"}>
-      <span className="toggle-knob" />
-    </span>
-  </button>
-);
-
 /** Preferences that outlive a game. Opens over whatever is on the table. */
-const MUSIC_STATUS_LINES: Readonly<Record<MusicStatus, string | null>> = {
-  off: null,
-  starting: "Asking for the microphone",
-  listening: "Listening",
-  denied: "Microphone blocked. Allow it in your browser's site settings.",
-  unsupported: "This browser cannot use the microphone.",
-};
-
 export const OptionsPanel = ({
   options,
   musicStatus,
   onChange,
+  onVisuals,
   onClose,
 }: OptionsPanelProps) => (
   <div className="setup-backdrop" onClick={onClose}>
@@ -99,23 +72,23 @@ export const OptionsPanel = ({
           onChange({ ...options, facePlayer: !options.facePlayer })
         }
       />
-      <Toggle
-        label="React to music"
-        detail="Listens through the microphone and lights the table to the beat. Nothing is recorded or sent anywhere."
-        checked={options.music}
-        onToggle={() => onChange({ ...options, music: !options.music })}
-      />
-      {MUSIC_STATUS_LINES[musicStatus] && (
-        <p
-          className={
-            musicStatus === "listening"
-              ? "music-status music-status-live"
-              : "music-status"
-          }
-        >
-          {MUSIC_STATUS_LINES[musicStatus]}
-        </p>
-      )}
+      <button type="button" className="toggle-row" onClick={onVisuals}>
+        <span className="toggle-text">
+          <span className="toggle-label">Music and lights</span>
+          <span
+            className={
+              musicStatus === "listening"
+                ? "toggle-detail music-status-live"
+                : "toggle-detail"
+            }
+          >
+            {options.music
+              ? (MUSIC_STATUS_LINES[musicStatus] ?? "On")
+              : "Off. The table can light up to the music in the room."}
+          </span>
+        </span>
+        <span className="row-chevron">›</span>
+      </button>
       <button type="button" className="button button-primary" onClick={onClose}>
         Done
       </button>

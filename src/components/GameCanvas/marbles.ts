@@ -18,6 +18,8 @@ export type Marble = {
   selectGlow: number;
   /** Music glow from passing waves, 0 when quiet. */
   musicGlow: number;
+  /** Bass breathing shared by every marble, 0 when quiet. */
+  breath: number;
 };
 
 export type MarbleSet = {
@@ -30,10 +32,11 @@ export type MarbleSet = {
   place: (marble: Marble, x: number, z: number, lift: number) => void;
   setGlow: (marble: Marble, amount: number) => void;
   /**
-   * Light a marble from a passing wave: extra emission pushed toward white,
-   * and a swell in size. `glow` of 0 restores its resting look.
+   * Light a marble to music: `glow` is a passing wave (extra emission
+   * pushed toward white, and a swell in size), `breath` the bass every
+   * marble breathes with. Both 0 restores its resting look.
    */
-  setMusic: (marble: Marble, glow: number) => void;
+  setMusic: (marble: Marble, glow: number, breath: number) => void;
   dispose: () => void;
 };
 
@@ -61,7 +64,7 @@ export const createMarbleSet = (scene: Scene, theme: Theme): MarbleSet => {
     const mesh = new Mesh(geometry, material);
     mesh.castShadow = true;
     scene.add(mesh);
-    return { mesh, hole: -1, selectGlow: 0, musicGlow: 0 };
+    return { mesh, hole: -1, selectGlow: 0, musicGlow: 0, breath: 0 };
   };
 
   const remove = (marble: Marble) => {
@@ -87,18 +90,25 @@ export const createMarbleSet = (scene: Scene, theme: Theme): MarbleSet => {
     applyGlow(marble);
   };
 
-  const setMusic = (marble: Marble, amount: number) => {
-    if (marble.musicGlow === amount) return;
+  const setMusic = (marble: Marble, amount: number, breath: number) => {
+    if (marble.musicGlow === amount && marble.breath === breath) return;
     marble.musicGlow = amount;
+    marble.breath = breath;
     applyGlow(marble);
-    marble.mesh.scale.setScalar(1 + Math.min(amount, 1.5) * music.swell);
+    marble.mesh.scale.setScalar(
+      1 + (Math.min(amount, 1.5) + breath * 0.4) * music.swell,
+    );
   };
 
   const applyGlow = (marble: Marble) => {
     const material = marble.mesh.material;
     glow
       .copy(material.color)
-      .multiplyScalar(theme.scene.marbleGlow + marble.selectGlow * SELECT_GLOW);
+      .multiplyScalar(
+        theme.scene.marbleGlow +
+          marble.selectGlow * SELECT_GLOW +
+          marble.breath * music.breathe,
+      );
     if (marble.musicGlow > 0) {
       const wave = Math.min(marble.musicGlow, 1.5);
       beam

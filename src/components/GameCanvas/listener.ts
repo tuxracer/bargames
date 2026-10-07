@@ -20,7 +20,16 @@ export type Listener = {
 };
 
 const FFT_SIZE = 1_024;
-const SMOOTHING = 0.5;
+/** Light smoothing keeps kicks sharp for the onset detector. */
+const SMOOTHING = 0.3;
+/**
+ * The analyser's byte scale spans these decibels. Its default ceiling of
+ * -30 dB is low enough that a phone next to a speaker pins the bass bins
+ * at 255 and every beat looks the same; a higher ceiling keeps the
+ * dynamics, and the software auto gain restores the range for quiet mics.
+ */
+const MIN_DECIBELS = -100;
+const MAX_DECIBELS = -10;
 
 export class ListenerError extends Error {
   readonly code: "UNSUPPORTED" | "DENIED";
@@ -72,6 +81,8 @@ export const createListener = (): Listener => {
     analyser = context.createAnalyser();
     analyser.fftSize = FFT_SIZE;
     analyser.smoothingTimeConstant = SMOOTHING;
+    analyser.minDecibels = MIN_DECIBELS;
+    analyser.maxDecibels = MAX_DECIBELS;
     context.createMediaStreamSource(stream).connect(analyser);
     // Browsers keep a context made outside a gesture suspended until one.
     window.addEventListener("pointerdown", resumeOnGesture);

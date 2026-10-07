@@ -95,7 +95,9 @@ export const createDimpleTexture = (): CanvasTexture | null => {
 
 /**
  * A glowing grid for the neon table: thin lines on a transparent-black
- * field, tiled across the surface as an emissive map.
+ * field, each wrapped in a soft halo, tiled across the surface as an
+ * emissive map. The halo is what music swells: a brighter emissive makes
+ * the line bloom outward rather than merely whiten.
  */
 export const createGridTexture = (lineColor: string): CanvasTexture | null => {
   const size = 256;
@@ -107,14 +109,26 @@ export const createGridTexture = (lineColor: string): CanvasTexture | null => {
   ctx.fillStyle = "#000";
   ctx.fillRect(0, 0, size, size);
   ctx.strokeStyle = lineColor;
-  ctx.lineWidth = 2;
-  ctx.globalAlpha = 0.55;
-  ctx.beginPath();
-  ctx.moveTo(1, 0);
-  ctx.lineTo(1, size);
-  ctx.moveTo(0, 1);
-  ctx.lineTo(size, 1);
-  ctx.stroke();
+  const strokes: readonly [width: number, alpha: number][] = [
+    [14, 0.05],
+    [7, 0.1],
+    [2, 0.55],
+  ];
+  for (const [width, alpha] of strokes) {
+    ctx.lineWidth = width;
+    ctx.globalAlpha = alpha;
+    ctx.beginPath();
+    ctx.moveTo(1, 0);
+    ctx.lineTo(1, size);
+    ctx.moveTo(0, 1);
+    ctx.lineTo(size, 1);
+    // The halo of the line on the opposite edge wraps around the tile.
+    ctx.moveTo(size + 1, 0);
+    ctx.lineTo(size + 1, size);
+    ctx.moveTo(0, size + 1);
+    ctx.lineTo(size, size + 1);
+    ctx.stroke();
+  }
   const texture = new CanvasTexture(canvas);
   texture.colorSpace = SRGBColorSpace;
   texture.wrapS = RepeatWrapping;

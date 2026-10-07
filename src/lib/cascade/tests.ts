@@ -50,3 +50,19 @@ describe("createCascade", () => {
     expect(cascade.glowAt(-5, 0, 200)).toBeCloseTo(1);
   });
 });
+
+describe("front", () => {
+  it("reports where a wave's ring is and how bright", () => {
+    const cascade = createCascade();
+    cascade.trigger(1, 2, 0.8, 0);
+    const wave = cascade.waves[0];
+    const early = { ...cascade.front(wave, 100) };
+    expect(early.radius).toBeCloseTo(100 * WAVE_SPEED);
+    expect(early.strength).toBeCloseTo(0.8, 1);
+    const late = { ...cascade.front(wave, WAVE_LIFE_MS) };
+    expect(late.radius).toBeGreaterThan(early.radius);
+    expect(late.strength).toBeCloseTo(0);
+    cascade.prune(WAVE_LIFE_MS + 1);
+    expect(cascade.front(wave, WAVE_LIFE_MS + 1).strength).toBe(0);
+  });
+});

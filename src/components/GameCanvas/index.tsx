@@ -2,8 +2,8 @@ import { useEffect, useRef } from "react";
 import { Vector3 } from "three";
 import { holeAt, HOLES, ZONE_APEX, ZONES } from "@/lib/board";
 import type { HoleIndex, Zone } from "@/lib/board";
-import { createBeatDetector } from "@/lib/beat";
-import type { BeatDetector } from "@/lib/beat";
+import { createBeatDetector, createSpectrumBands } from "@/lib/beat";
+import type { BeatDetector, Sensitivity, SpectrumBands } from "@/lib/beat";
 import { createCascade } from "@/lib/cascade";
 import type { Cascade } from "@/lib/cascade";
 import { canStop, hopOptions, stepOptions } from "@/lib/game";
@@ -16,6 +16,7 @@ import {
   sampleMotion,
 } from "@/lib/motion";
 import type { Point2 } from "@/lib/motion";
+import type { Visuals } from "@/lib/options";
 import type { Theme } from "@/lib/theme";
 import { smoothstep } from "@/utils/smoothstep";
 import { vibrateIfSupported } from "@/utils/vibrateIfSupported";
@@ -32,6 +33,8 @@ import {
 } from "./consts";
 import { createHaloSet } from "./halos";
 import type { HaloSet } from "./halos";
+import { createLightShow, overlayLevel, RIM_BANDS } from "./lightshow";
+import type { LightShow } from "./lightshow";
 import { createListener, isListenerError } from "./listener";
 import type { Listener, MusicStatus } from "./listener";
 import { createMarbleSet } from "./marbles";
@@ -57,6 +60,10 @@ type GameCanvasProps = {
   viewZone: Zone;
   /** Listen through the microphone and light the table to the music. */
   music: boolean;
+  /** How loud the music has to be before the table reacts. */
+  sensitivity: Sensitivity;
+  /** Which parts of the table the music may move. */
+  visuals: Visuals;
   onMusicStatus: (status: MusicStatus) => void;
   /** The player stepped a marble into an adjacent hole; the turn ends. */
   onStep: (piece: number, hole: HoleIndex) => void;
@@ -107,6 +114,7 @@ type Rig = {
   readonly markers: MarkerSet;
   readonly picker: Picker;
   readonly halos: HaloSet;
+  readonly show: LightShow;
   flight: Flight | null;
   selection: Selection | null;
   press: Press | null;
@@ -121,12 +129,14 @@ type Rig = {
 type Audio = {
   listener: Listener | null;
   detector: BeatDetector | null;
+  /** The spectrum folded into the bands the rim wears. */
+  bands: SpectrumBands | null;
   readonly cascade: Cascade;
   readonly spectrum: Uint8Array<ArrayBuffer>;
   /** Which tip the next off-center wave starts from. */
   beatIndex: number;
-  /** A decaying envelope kicked by each beat, for rim and HUD flashes. */
-  flash: number;
+  /** When the last frame was heard, for the bands' smoothing. */
+  heardMs: number;
   /** Whether the last frame applied music; lets a stop clean up once. */
   lit: boolean;
   /** Last value written to the --music CSS variable. */
@@ -135,7 +145,6 @@ type Audio = {
 
 const HALO_CAPACITY = 60;
 const SPECTRUM_BINS = 512;
-const FLASH_DECAY = 0.88;
 const CSS_LEVEL_STEP = 0.03;
 /** Beats this strong start at the center; the rest sweep in from a tip. */
 const CENTER_BEAT_STRENGTH = 0.75;
@@ -204,6 +213,8 @@ export const GameCanvas = ({
   theme,
   viewZone,
   music,
+  sensitivity,
+  visuals,
   onMusicStatus,
   onStep,
   onHop,
@@ -217,6 +228,8 @@ export const GameCanvas = ({
   const previousStateRef = useRef<GameState | null>(null);
   const interactiveRef = useRef(interactive);
   const hintsRef = useRef(hints);
+  const visualsRef = useRef(visuals);
+  const sensitivityRef = useRef(sensitivity);
   const onStepRef = useRef(onStep);
   const onHopRef = useRef(onHop);
   const onStopRef = useRef(onStop);
@@ -233,10 +246,11 @@ export const GameCanvas = ({
   const audioRef = useRef<Audio>({
     listener: null,
     detector: null,
+    bands: null,
     cascade: createCascade(),
     spectrum: new Uint8Array(SPECTRUM_BINS),
     beatIndex: 0,
-    flash: 0,
+    heardMs: 0,
     lit: false,
     cssLevel: 0,
   });
@@ -247,6 +261,8 @@ export const GameCanvas = ({
     stateRef.current = state;
     interactiveRef.current = interactive;
     hintsRef.current = hints;
+    visualsRef.current = visuals;
+    sensitivityRef.current = sensitivity;
     onStepRef.current = onStep;
     onHopRef.current = onHop;
     onStopRef.current = onStop;
@@ -261,12 +277,15 @@ export const GameCanvas = ({
 
     const handle = createScene(canvas, theme);
     handle.setView(viewRef.current.current);
+    const marbles = createMarbleSet(handle.scene, theme);
+    const halos = createHaloSet(handle.scene, HALO_CAPACITY);
     const rig: Rig = {
       handle,
-      marbles: createMarbleSet(handle.scene, theme),
+      marbles,
       markers: createMarkerSet(handle.scene, theme.scene.markerLighten),
       picker: createPicker(canvas, handle.camera),
-      halos: createHaloSet(handle.scene, HALO_CAPACITY),
+      halos,
+      show: createLightShow(handle, marbles, halos, theme),
       flight: null,
       selection: null,
       press: null,
@@ -547,57 +566,49 @@ export const GameCanvas = ({
       rig.picker.measure();
     };
 
+    /** A marble the music may toss: in its hole, not in hand or in the air. */
+    const resting = (marble: Marble): boolean => {
+      if (rig.flight?.marble === marble) return false;
+      const selection = rig.selection;
+      return selection === null || marbleOf(selection.pieceId) !== marble;
+    };
+
     /** Read the microphone and light the table for this frame. */
     const playMusic = (now: number) => {
       const audio = audioRef.current;
-      const { listener, detector, cascade } = audio;
+      const { listener, detector, bands, cascade } = audio;
       const heard =
         listener !== null &&
         detector !== null &&
+        bands !== null &&
         listener.sample(audio.spectrum);
       if (!heard) {
         if (audio.lit) quietMusic();
         return;
       }
+      const dtMs = audio.lit ? now - audio.heardMs : 0;
+      audio.heardMs = now;
       audio.lit = true;
       const frame = detector.update(audio.spectrum, now);
+      const levels = bands.update(audio.spectrum, dtMs);
       if (frame.beat) {
-        const strength = 0.55 + 0.7 * frame.strength;
+        const strength = 0.6 + 0.8 * frame.strength;
         if (frame.strength >= CENTER_BEAT_STRENGTH) {
           cascade.trigger(0, 0, strength, now);
+          rig.show.strike(null);
         } else {
-          const origin = TIP_ORIGINS[audio.beatIndex % TIP_ORIGINS.length];
+          const tip = audio.beatIndex % ZONES.length;
+          const origin = TIP_ORIGINS[tip];
           cascade.trigger(origin.x, origin.y, strength, now);
+          rig.show.strike(ZONES[tip]);
           audio.beatIndex += 1;
         }
-        audio.flash = Math.max(audio.flash, frame.strength);
       }
-      audio.flash *= FLASH_DECAY;
       cascade.prune(now);
+      const shown = visualsRef.current;
+      rig.show.apply(frame, cascade, levels, now, shown, resting);
 
-      const look = theme.music;
-      rig.halos.begin();
-      for (const marble of rig.marbles.byPiece.values()) {
-        const position = marble.mesh.position;
-        const glow = cascade.glowAt(position.x, position.z, now);
-        rig.marbles.setMusic(marble, glow);
-        rig.halos.add(
-          position.x,
-          position.z,
-          marble.mesh.material.color,
-          glow * look.halo,
-        );
-      }
-      rig.halos.end();
-
-      const bass = frame.bass + audio.flash * 0.5;
-      const { pulse } = handle;
-      pulse.rim.emissiveIntensity = pulse.rimIntensity + bass * look.rimPulse;
-      pulse.table.emissiveIntensity =
-        pulse.tableIntensity + bass * look.gridPulse;
-      pulse.key.intensity = pulse.keyIntensity * (1 + bass * look.keyPulse);
-
-      const level = Math.min(1, audio.flash + frame.bass * 0.4);
+      const level = shown.overlay ? overlayLevel(frame) : 0;
       if (Math.abs(level - audio.cssLevel) > CSS_LEVEL_STEP) {
         audio.cssLevel = level;
         document.documentElement.style.setProperty("--music", level.toFixed(2));
@@ -608,16 +619,7 @@ export const GameCanvas = ({
     const quietMusic = () => {
       const audio = audioRef.current;
       audio.lit = false;
-      audio.flash = 0;
-      for (const marble of rig.marbles.byPiece.values()) {
-        rig.marbles.setMusic(marble, 0);
-      }
-      rig.halos.begin();
-      rig.halos.end();
-      const { pulse } = handle;
-      pulse.rim.emissiveIntensity = pulse.rimIntensity;
-      pulse.table.emissiveIntensity = pulse.tableIntensity;
-      pulse.key.intensity = pulse.keyIntensity;
+      rig.show.quiet(resting);
       audio.cssLevel = 0;
       document.documentElement.style.setProperty("--music", "0");
     };
@@ -709,6 +711,7 @@ export const GameCanvas = ({
       audio.listener?.stop();
       audio.listener = null;
       audio.detector = null;
+      audio.bands = null;
       onMusicStatusRef.current("off");
       return;
     }
@@ -724,6 +727,13 @@ export const GameCanvas = ({
           listener.sampleRate(),
           listener.fftSize,
         );
+        audio.bands = createSpectrumBands(
+          listener.sampleRate(),
+          listener.fftSize,
+          RIM_BANDS,
+        );
+        audio.detector.setSensitivity(sensitivityRef.current);
+        audio.bands.setSensitivity(sensitivityRef.current);
         audio.beatIndex = 0;
         onMusicStatusRef.current("listening");
       })
@@ -742,9 +752,17 @@ export const GameCanvas = ({
       if (audio.listener === listener) {
         audio.listener = null;
         audio.detector = null;
+        audio.bands = null;
       }
     };
   }, [music]);
+
+  // Sensitivity can change while the microphone is open.
+  useEffect(() => {
+    const audio = audioRef.current;
+    audio.detector?.setSensitivity(sensitivity);
+    audio.bands?.setSensitivity(sensitivity);
+  }, [sensitivity]);
 
   // A new side to stand on: start the swing from wherever the camera is.
   useEffect(() => {

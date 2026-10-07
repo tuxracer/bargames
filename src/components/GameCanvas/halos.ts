@@ -20,7 +20,7 @@ export type HaloSet = {
   dispose: () => void;
 };
 
-const HALO_RADIUS = 1.1;
+const HALO_RADIUS = 1.35;
 const HALO_Y = BOARD_TOP + 0.02;
 
 /** Soft radial falloff so the pool has no edge. */
@@ -83,7 +83,7 @@ export const createHaloSet = (scene: Scene, capacity: number): HaloSet => {
     if (count >= capacity || glow <= 0.01) return;
     placer.position.set(x, HALO_Y, z);
     placer.rotation.set(-Math.PI / 2, 0, 0);
-    placer.scale.setScalar(0.7 + glow * 0.8);
+    placer.scale.setScalar(0.6 + Math.min(glow, 2) * 0.7);
     placer.updateMatrix();
     mesh.setMatrixAt(count, placer.matrix);
     tint.copy(color).multiplyScalar(Math.min(glow, 1.5) * 0.9);

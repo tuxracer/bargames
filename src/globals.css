@@ -503,6 +503,59 @@ button {
   color: var(--paper-dim);
 }
 
+/* The sensitivity picker: its words above, the three choices below. */
+.sensitivity {
+  display: flex;
+  flex-direction: column;
+  gap: 0.7rem;
+}
+
+.sensitivity .segmented {
+  display: flex;
+}
+
+.sensitivity .segment {
+  flex: 1;
+}
+
+/* A row that opens another card. */
+.row-chevron {
+  flex: none;
+  font-size: 1.6rem;
+  line-height: 1;
+  color: var(--paper-dim);
+}
+
+.panel-section {
+  margin-top: 0.25rem;
+  margin-bottom: -0.5rem;
+  font-size: 0.85rem;
+  color: var(--paper-dim);
+}
+
+.toggle-list {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+}
+
+.panel-buttons {
+  display: flex;
+  gap: 0.6rem;
+  margin-top: 0.4rem;
+}
+
+.panel-buttons .button {
+  flex: 1;
+  margin-top: 0;
+}
+
+/* Long cards scroll inside the viewport. */
+.panel {
+  max-height: 100%;
+  overflow-y: auto;
+}
+
 .music-status-live {
   color: var(--accent);
 }
