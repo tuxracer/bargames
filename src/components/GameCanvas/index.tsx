@@ -425,8 +425,16 @@ export const GameCanvas = ({
 
       const selection = rig.selection;
       if (!selection) return;
-      if (hole !== -1 && selection.destinations.includes(hole)) {
-        commit(hole);
+      // A tap near a ring is the same move as a drop on it: forgive it by
+      // the same radius.
+      const target = rig.picker.nearestOf(
+        selection.destinations,
+        hit.x,
+        hit.z,
+        SNAP_RADIUS,
+      );
+      if (target !== null) {
+        commit(target);
         return;
       }
       // A stray tap puts a free marble down; a chain marble stays in play.

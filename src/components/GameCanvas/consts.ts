@@ -16,8 +16,11 @@ export const DRAG_LIFT = 0.9;
  * visible; mouse drags get no offset. */
 export const DRAG_FINGER_OFFSET = 0.7;
 
-/** How far a marble may be from a hole center and still snap into it. */
-export const SNAP_RADIUS = 0.62;
+/** How far a dropped (or tapped) marble may be from a legal hole's center
+ * and still snap into it, in hole spacings. The snap always takes the
+ * nearest legal hole, so this only needs to stay under one spacing: a drop
+ * dead on a neighboring hole that is not legal still flies home. */
+export const SNAP_RADIUS = 0.9;
 /** How far a press must travel (CSS px) before it counts as a drag. */
 export const DRAG_THRESHOLD_PX = 8;
 /** How close a touch must land to a hole center to pick it up. */
