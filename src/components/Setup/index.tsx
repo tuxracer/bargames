@@ -37,8 +37,8 @@ export const Setup = ({ theme, onStart }: SetupProps) => {
   return (
     <div className="setup-backdrop">
       <section className="setup">
-        <p className="setup-eyebrow">neongames</p>
-        <h1 className="setup-title">Chinese Checkers</h1>
+        <p className="setup-eyebrow">Chinese Checkers</p>
+        <h1 className="setup-title">neongames.app</h1>
         <p className="setup-blurb">
           Race your ten marbles across the star into the far corner. Step to a
           neighboring hole, or hop over any marble, as many times as the board
