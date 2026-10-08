@@ -33,6 +33,13 @@ const TAVERN: Theme = {
     keyPulse: 0.7,
     roomFlash: 0.05,
   },
+  fireworks: {
+    whiten: 0.85,
+    ember: [1, 0.55, 0.18],
+    glow: 1.7,
+    flash: 260,
+    sky: 0.07,
+  },
   marbles: {
     S: { name: "Amber", hex: 0xf08a14, css: "#f5a623", roughness: 0.1 },
     N: { name: "Emerald", hex: 0x14b062, css: "#27c47a", roughness: 0.1 },
@@ -75,6 +82,13 @@ const NEON: Theme = {
     ringGlow: 2.4,
     keyPulse: 0.6,
     roomFlash: 0.12,
+  },
+  fireworks: {
+    whiten: 0.55,
+    ember: [0.4, 0.08, 0.7],
+    glow: 2,
+    flash: 200,
+    sky: 0.11,
   },
   marbles: {
     S: { name: "Cyan", hex: 0x19e6ff, css: "#19e6ff", roughness: 0.12 },

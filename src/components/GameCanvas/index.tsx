@@ -1,11 +1,18 @@
 import { useEffect, useRef } from "react";
-import { Vector3 } from "three";
+import { Color, Vector3 } from "three";
 import { holeAt, HOLES, ZONE_APEX, ZONES } from "@/lib/board";
 import type { HoleIndex, Zone } from "@/lib/board";
 import { createBeatDetector, createSpectrumBands } from "@/lib/beat";
-import type { BeatDetector, Sensitivity, SpectrumBands } from "@/lib/beat";
+import type {
+  BeatDetector,
+  BeatFrame,
+  Sensitivity,
+  SpectrumBands,
+} from "@/lib/beat";
 import { createCascade } from "@/lib/cascade";
 import type { Cascade } from "@/lib/cascade";
+import { FLASH_MS } from "@/lib/fireworks";
+import type { Rgb } from "@/lib/fireworks";
 import { canStop, hopOptions, stepOptions } from "@/lib/game";
 import type { GameState } from "@/lib/game";
 import {
@@ -31,6 +38,8 @@ import {
   SNAP_RADIUS,
   VIEW_SWING_MS,
 } from "./consts";
+import { createFireworkDisplay } from "./fireworks";
+import type { FireworkDisplay } from "./fireworks";
 import { createHaloSet } from "./halos";
 import type { HaloSet } from "./halos";
 import { createLightShow, overlayLevel, RIM_BANDS } from "./lightshow";
@@ -115,6 +124,9 @@ type Rig = {
   readonly picker: Picker;
   readonly halos: HaloSet;
   readonly show: LightShow;
+  readonly fireworks: FireworkDisplay;
+  /** The winner's show, while the game stays won. */
+  celebration: Celebration | null;
   flight: Flight | null;
   selection: Selection | null;
   press: Press | null;
@@ -143,7 +155,56 @@ type Audio = {
   cssLevel: number;
 };
 
+/** Fireworks for the winner, launched from their own marbles. */
+type Celebration = {
+  /** Where the shells leave from: the winner's ten marbles. */
+  readonly origins: readonly Point2[];
+  /** The winner's color, brighter takes on it, and white. */
+  readonly palette: readonly Rgb[];
+  readonly startMs: number;
+  /** When the show's own cadence fires next, with no beats to follow. */
+  nextMs: number;
+  /** When a beat last fired a shell; the cadence waits while beats come. */
+  beatMs: number;
+  /** The last few gaps between beats, for timing bursts onto the beat. */
+  readonly gaps: Float64Array;
+  gapCount: number;
+  /** Shells still to fire in the opening volley, one per marble. */
+  volley: number;
+  volleyMs: number;
+  /** Whether the last frame colored the room; lets the end clean up once. */
+  lit: boolean;
+};
+
 const HALO_CAPACITY = 60;
+/** The opening volley: one shell from each winning marble, this far apart. */
+const VOLLEY_GAP_MS = 120;
+/** The show's own cadence, and how much it wanders. */
+const CADENCE_MS = 380;
+const CADENCE_JITTER_MS = 520;
+/** After this long the show eases to the odd shell, to spare the battery. */
+const FULL_SHOW_MS = 40_000;
+const LULL_CADENCE_MS = 2_400;
+/** While beats keep coming the cadence stays quiet; this long after the
+ * last one it takes over again. */
+const BEAT_HOLD_MS = 1_800;
+/** Beats this strong fire a salvo rather than one shell. */
+const SALVO_STRENGTH = 0.7;
+/** Tempo: this many recent beat gaps, each within this range, give a
+ * period; a shell then climbs for a whole number of beats, at least this
+ * long, so it bursts on a beat. */
+const TEMPO_GAPS = 4;
+const TEMPO_MIN_MS = 250;
+const TEMPO_MAX_MS = 1_500;
+const CLIMB_MIN_MS = 450;
+const CLIMB_MAX_BEATS = 3;
+const SALVO_SHELLS = 3;
+/** How far the winner's color is pushed toward white for the pale shells. */
+const PALE_SHARE = 0.55;
+/** Shells burst toward a point this far beyond the far rim, from the
+ * camera's side, and this much of the way there from their marble. */
+const SKY_REACH = 9;
+const SKY_PULL = 0.6;
 const SPECTRUM_BINS = 512;
 const CSS_LEVEL_STEP = 0.03;
 /** Beats this strong start at the center; the rest sweep in from a tip. */
@@ -185,6 +246,35 @@ const holePoint = (hole: HoleIndex): Point2 => ({
   x: HOLES[hole].px,
   y: HOLES[hole].py,
 });
+
+const toRgb = (color: Color): Rgb => [color.r, color.g, color.b];
+
+/** The winner's fireworks: their marbles as launch sites, their color. */
+const createCelebration = (
+  state: GameState,
+  theme: Theme,
+  nowMs: number,
+): Celebration | null => {
+  if (state.winner === null) return null;
+  const winner = state.winner;
+  const origins = state.pieces
+    .filter((piece) => piece.seat === winner)
+    .map((piece) => holePoint(piece.hole));
+  const own = new Color(theme.marbles[state.seats[winner].zone].hex);
+  const pale = own.clone().lerp(new Color(0xffffff), PALE_SHARE);
+  return {
+    origins,
+    palette: [toRgb(own), toRgb(own), toRgb(own), toRgb(pale), [1, 1, 1]],
+    startMs: nowMs,
+    nextMs: nowMs + origins.length * VOLLEY_GAP_MS,
+    beatMs: -Infinity,
+    gaps: new Float64Array(TEMPO_GAPS),
+    gapCount: 0,
+    volley: origins.length,
+    volleyMs: nowMs,
+    lit: false,
+  };
+};
 
 /**
  * Whether `next` continues `previous` forward (a turn played or a hop
@@ -286,6 +376,13 @@ export const GameCanvas = ({
       picker: createPicker(canvas, handle.camera),
       halos,
       show: createLightShow(handle, marbles, halos, theme),
+      fireworks: createFireworkDisplay(
+        handle.scene,
+        handle.renderer,
+        handle.camera,
+        theme,
+      ),
+      celebration: null,
       flight: null,
       selection: null,
       press: null,
@@ -295,6 +392,7 @@ export const GameCanvas = ({
 
     const sample = createMotionSample();
     const hit = new Vector3();
+    const skyScratch = new Color();
 
     const marbleOf = (pieceId: number) => rig.marbles.byPiece.get(pieceId);
 
@@ -555,7 +653,8 @@ export const GameCanvas = ({
       }
       swingView(now);
       rig.markers.pulse(now);
-      playMusic(now);
+      const heard = playMusic(now);
+      playFireworks(now, heard);
       handle.renderer.render(handle.scene, handle.camera);
     };
 
@@ -581,8 +680,11 @@ export const GameCanvas = ({
       return selection === null || marbleOf(selection.pieceId) !== marble;
     };
 
-    /** Read the microphone and light the table for this frame. */
-    const playMusic = (now: number) => {
+    /**
+     * Read the microphone and light the table for this frame. Returns what
+     * was heard, or null when the microphone is closed or silent.
+     */
+    const playMusic = (now: number): BeatFrame | null => {
       const audio = audioRef.current;
       const { listener, detector, bands, cascade } = audio;
       const heard =
@@ -592,7 +694,7 @@ export const GameCanvas = ({
         listener.sample(audio.spectrum);
       if (!heard) {
         if (audio.lit) quietMusic();
-        return;
+        return null;
       }
       const dtMs = audio.lit ? now - audio.heardMs : 0;
       audio.heardMs = now;
@@ -621,6 +723,131 @@ export const GameCanvas = ({
         audio.cssLevel = level;
         document.documentElement.style.setProperty("--music", level.toFixed(2));
       }
+      return frame;
+    };
+
+    /**
+     * One shell from one of the winner's marbles, in one of their colors,
+     * aimed at the sky beyond the far rim so it bursts in the dark above
+     * the board rather than over the wood, from whichever side the camera
+     * stands.
+     */
+    const fire = (
+      party: Celebration,
+      strength: number,
+      now: number,
+      origin = Math.floor(Math.random() * party.origins.length),
+      riseMs?: number,
+    ) => {
+      const spot = party.origins[origin];
+      const color =
+        party.palette[Math.floor(Math.random() * party.palette.length)];
+      const camera = handle.camera.position;
+      const stance = Math.hypot(camera.x, camera.z) || 1;
+      const skyX = (-camera.x / stance) * SKY_REACH;
+      const skyZ = (-camera.z / stance) * SKY_REACH;
+      rig.fireworks.launch(
+        {
+          x: spot.x,
+          z: spot.y,
+          aimX: spot.x + (skyX - spot.x) * SKY_PULL,
+          aimZ: spot.y + (skyZ - spot.y) * SKY_PULL,
+          color,
+          strength,
+          riseMs,
+        },
+        now,
+      );
+    };
+
+    /**
+     * The beat's period from the last few gaps, when they agree (all
+     * within a fifth of their median), else null.
+     */
+    const tempo = (party: Celebration): number | null => {
+      if (party.gapCount < TEMPO_GAPS) return null;
+      const sorted = Array.from(party.gaps).sort((a, b) => a - b);
+      const median = (sorted[1] + sorted[2]) / 2;
+      for (const gap of sorted) {
+        if (Math.abs(gap - median) > median * 0.2) return null;
+      }
+      return median;
+    };
+
+    /** A beat landed: note its gap and say how long a shell should climb
+     * so its burst lands on a coming beat. */
+    const onBeat = (party: Celebration, now: number): number | undefined => {
+      const gap = now - party.beatMs;
+      party.beatMs = now;
+      if (gap >= TEMPO_MIN_MS && gap <= TEMPO_MAX_MS) {
+        party.gaps[party.gapCount % TEMPO_GAPS] = gap;
+        party.gapCount += 1;
+      }
+      const period = tempo(party);
+      if (period === null) return undefined;
+      const beats = Math.min(CLIMB_MAX_BEATS, Math.ceil(CLIMB_MIN_MS / period));
+      return beats * period;
+    };
+
+    /**
+     * The winner's show. With music playing, shells go up on the beat, a
+     * salvo on the strong ones; otherwise, or when the beats stop, the
+     * show keeps its own time.
+     */
+    const playFireworks = (now: number, heard: BeatFrame | null) => {
+      const party = rig.celebration;
+      if (party) {
+        if (party.volley > 0 && now >= party.volleyMs) {
+          party.volley -= 1;
+          fire(party, 0.75 + Math.random() * 0.25, now, party.volley);
+          party.volleyMs = now + VOLLEY_GAP_MS;
+        } else if (heard?.beat) {
+          const climb = onBeat(party, now);
+          const strength = 0.45 + 0.55 * heard.strength;
+          const shells = heard.strength >= SALVO_STRENGTH ? SALVO_SHELLS : 1;
+          for (let i = 0; i < shells; i += 1) {
+            fire(party, strength, now, undefined, climb);
+          }
+        } else if (
+          party.volley === 0 &&
+          now - party.beatMs > BEAT_HOLD_MS &&
+          now >= party.nextMs
+        ) {
+          fire(party, 0.3 + Math.random() * 0.7, now);
+          const lull = now - party.startMs > FULL_SHOW_MS;
+          party.nextMs =
+            now +
+            (lull ? LULL_CADENCE_MS : CADENCE_MS) +
+            Math.random() * CADENCE_JITTER_MS;
+        }
+      }
+      rig.fireworks.update(now);
+      lightSky(party, now, heard);
+    };
+
+    /** A burst flashes the room its color, on top of whatever music does. */
+    const lightSky = (
+      party: Celebration | null,
+      now: number,
+      heard: BeatFrame | null,
+    ) => {
+      const room = handle.stage.room;
+      const musicLit = heard !== null && visualsRef.current.room;
+      if (!party) return;
+      const flash = rig.fireworks.flash();
+      const burn = flash.strength * Math.exp(-(now - flash.startMs) / FLASH_MS);
+      if (burn < 0.002) {
+        if (party.lit && !musicLit) room.background.copy(room.base);
+        party.lit = false;
+      } else {
+        if (!musicLit) room.background.copy(room.base);
+        skyScratch
+          .setRGB(flash.r, flash.g, flash.b)
+          .multiplyScalar(burn * theme.fireworks.sky);
+        room.background.add(skyScratch);
+        party.lit = true;
+      }
+      room.fog.copy(room.background);
     };
 
     /** Put everything music touched back the way the theme left it. */
@@ -643,6 +870,7 @@ export const GameCanvas = ({
       rig.marbles.dispose();
       rig.markers.dispose();
       rig.halos.dispose();
+      rig.fireworks.dispose();
       handle.dispose();
       rigRef.current = null;
       previousStateRef.current = null;
@@ -666,6 +894,12 @@ export const GameCanvas = ({
     for (const marble of rig.marbles.byPiece.values()) {
       rig.marbles.setGlow(marble, 0);
     }
+    if (state.winner === null && rig.celebration) {
+      rig.celebration = null;
+      rig.fireworks.clear();
+      rig.handle.stage.room.background.copy(rig.handle.stage.room.base);
+      rig.handle.stage.room.fog.copy(rig.handle.stage.room.base);
+    }
 
     const drop = rig.pendingDrop;
     rig.pendingDrop = null;
@@ -674,6 +908,10 @@ export const GameCanvas = ({
       if (stateRef.current !== state) return;
       const chain = state.chain;
       if (chain && interactive) selectRef.current(chain.piece);
+      // The winning marble has clicked home: let the fireworks go up.
+      if (state.winner !== null && rig.celebration === null) {
+        rig.celebration = createCelebration(state, theme, performance.now());
+      }
       onSettledRef.current();
     };
 

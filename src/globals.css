@@ -37,10 +37,6 @@
   box-shadow: 0 0 18px rgba(25, 230, 255, 0.35);
 }
 
-:root[data-theme="neon"] .status-over {
-  text-shadow: 0 0 14px rgba(255, 43, 214, 0.7);
-}
-
 * {
   margin: 0;
   padding: 0;
@@ -136,9 +132,66 @@ button {
   color: var(--paper);
 }
 
-.status-over {
-  font-size: 1.5rem;
-  font-weight: 600;
+/* The winner's name in lights over the fireworks. */
+.win-banner {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.1rem;
+  margin-top: 0.4rem;
+  animation: win-in 800ms cubic-bezier(0.2, 0.9, 0.3, 1.15) both;
+}
+
+.win-name {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35em;
+  font-size: 2.9rem;
+  font-weight: var(--heading-weight);
+  letter-spacing: var(--heading-tracking);
+  line-height: 1;
+  text-shadow: 0 0 calc(18px + 34px * var(--music)) currentColor;
+  animation: win-glow 2.6s ease-in-out infinite alternate;
+}
+
+.win-name .status-marble {
+  width: 0.62em;
+  height: 0.62em;
+}
+
+.win-word {
+  font-size: 1.35rem;
+  font-weight: 400;
+  letter-spacing: 0.28em;
+  color: var(--paper);
+  text-transform: lowercase;
+  padding-left: 0.28em;
+}
+
+.win-note {
+  margin-top: 0.35rem;
+  font-size: 0.95rem;
+  color: var(--paper-dim);
+}
+
+@keyframes win-in {
+  from {
+    opacity: 0;
+    transform: translateY(-0.4rem) scale(0.72);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes win-glow {
+  from {
+    filter: brightness(1);
+  }
+  to {
+    filter: brightness(1.35);
+  }
 }
 
 .status-marble {

@@ -1,5 +1,6 @@
 import { isString } from "remeda";
 import type { Zone } from "@/lib/board";
+import type { Rgb } from "@/lib/fireworks";
 
 export type ThemeId = "tavern" | "neon";
 
@@ -96,11 +97,26 @@ export type MusicTheme = {
   readonly roomFlash: number;
 };
 
+/** How the winner's fireworks burn in this look. */
+export type FireworksTheme = {
+  /** How white-hot a fresh spark burns before it shows its color. */
+  readonly whiten: number;
+  /** What a dying spark fades toward: gold over a bar, violet in a club. */
+  readonly ember: Rgb;
+  /** How brightly the sparks draw. */
+  readonly glow: number;
+  /** How hard a burst lights the table, as point light intensity. */
+  readonly flash: number;
+  /** How far the room's dark flashes toward a burst's color. */
+  readonly sky: number;
+};
+
 export type Theme = {
   readonly id: ThemeId;
   readonly name: string;
   readonly blurb: string;
   readonly scene: SceneTheme;
   readonly music: MusicTheme;
+  readonly fireworks: FireworksTheme;
   readonly marbles: Readonly<Record<Zone, MarbleLook>>;
 };

@@ -434,6 +434,10 @@ export const createScene = (
   const fit = () => {
     camera.zoom = 1;
     camera.updateProjectionMatrix();
+    // Projection reads the camera's world matrix, which only a render
+    // refreshes otherwise; bring it up to date so a fit before the first
+    // frame, or right after the camera moves, does not use a stale one.
+    camera.updateMatrixWorld();
     // Project the board rim and zoom until it just fits the viewport.
     let maxX = 0;
     let maxY = 0;

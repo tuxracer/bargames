@@ -16,11 +16,6 @@ type HudProps = {
 
 const statusLine = (game: GameState, theme: Theme): string => {
   const humans = game.seats.filter((seat) => seat.kind === "human").length;
-  if (game.winner !== null) {
-    const seat = game.seats[game.winner];
-    if (seat.kind === "human" && humans === 1) return "You win.";
-    return `${theme.marbles[seat.zone].name} wins.`;
-  }
   const seat = game.seats[game.current];
   const name = theme.marbles[seat.zone].name;
   if (seat.kind === "computer") return `${name} is thinking`;
@@ -42,18 +37,34 @@ export const Hud = ({
   onNewGame,
 }: HudProps) => {
   const over = game.winner !== null;
-  const seat = game.seats[over ? (game.winner as number) : game.current];
+  const seat = game.seats[game.winner ?? game.current];
   const look = theme.marbles[seat.zone];
   const midChain = !over && game.chain !== null;
+  const humans = game.seats.filter((other) => other.kind === "human").length;
+  const youWon = over && seat.kind === "human" && humans === 1;
 
   return (
     <div className={flipped ? "hud hud-flipped" : "hud"}>
       <header className="hud-top">
         <p className="wordmark">neongames</p>
-        <p className={over ? "status status-over" : "status"}>
-          <span className="status-marble" style={{ background: look.css }} />
-          {statusLine(game, theme)}
-        </p>
+        {over ? (
+          <div className="win-banner" style={{ color: look.css }}>
+            <p className="win-name">
+              <span
+                className="status-marble"
+                style={{ background: look.css }}
+              />
+              {look.name}
+            </p>
+            <p className="win-word">wins</p>
+            {youWon && <p className="win-note">That&apos;s you.</p>}
+          </div>
+        ) : (
+          <p className="status">
+            <span className="status-marble" style={{ background: look.css }} />
+            {statusLine(game, theme)}
+          </p>
+        )}
       </header>
       <footer className="hud-bottom">
         {over ? (
