@@ -129,7 +129,9 @@ export const createLightShow = (
     if (!rings?.instanceColor) return;
     const colors = rings.instanceColor.array;
     const base = stage.ringColors;
-    const breathe = RING_FLOOR + RING_BASS * frame.bass;
+    // With no music heard the rings sit exactly where the theme left them.
+    const breathe =
+      1 + (RING_FLOOR - 1) * frame.presence + RING_BASS * frame.bass;
     for (const hole of HOLES) {
       const glow = cascade.glowAt(hole.px, hole.py, nowMs);
       const gain = breathe + glow * look.ringGlow;
@@ -158,9 +160,10 @@ export const createLightShow = (
     const music = stage.rimMusic;
     if (!music) return;
     const values = music.array;
+    const floor = 1 + (RIM_FLOOR - 1) * frame.presence;
     for (let i = 0; i < rimBand.length; i += 1) {
       const level = bands[rimBand[i]] * look.rimSpectrum;
-      values[i * 2] = RIM_FLOOR + RIM_RANGE * level;
+      values[i * 2] = floor + RIM_RANGE * level;
       values[i * 2 + 1] = level * level * frame.punch * 0.8;
     }
     music.needsUpdate = true;

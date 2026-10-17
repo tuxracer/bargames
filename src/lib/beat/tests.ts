@@ -3,9 +3,11 @@ import {
   createAutoGain,
   createBeatDetector,
   createSpectrumBands,
+  PRESENCE_HOLD_MS,
   REFRACTORY_MS,
+  RHYTHM_ONSETS,
 } from ".";
-import type { Sensitivity } from ".";
+import type { BeatDetector, BeatFrame, Sensitivity } from ".";
 
 const SAMPLE_RATE = 48_000;
 const FFT_SIZE = 1_024;
@@ -36,6 +38,40 @@ const tone = (noise: number, lowHz: number, highHz: number, gain: number) => {
   return out;
 };
 
+/**
+ * A microphone in a quiet room: every bin jitters on its own, every frame,
+ * around a floor. Seeded so a failure can be reproduced. `spread` is the
+ * per-bin standard deviation in byte magnitudes; 14 is what the analyser
+ * reads from white noise with the app's settings.
+ */
+const createRoom = (floor: number, spread = 14, seed = 7) => {
+  let state = seed;
+  const random = () => {
+    state = (state * 1_664_525 + 1_013_904_223) % 4_294_967_296;
+    return state / 4_294_967_296;
+  };
+  const gaussian = () => {
+    const u = Math.max(random(), 1e-9);
+    const v = random();
+    return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v);
+  };
+  const out = new Uint8Array(BINS);
+  return (kick = 0): Uint8Array => {
+    for (let bin = 0; bin < BINS; bin += 1) {
+      const hz = bin * BIN_HZ;
+      const lift = hz >= 30 && hz <= 150 ? kick : 0;
+      out[bin] = Math.max(
+        0,
+        Math.min(255, Math.round(floor + lift + gaussian() * spread)),
+      );
+    }
+    return out;
+  };
+};
+
+/** How long a synthetic kick holds the bass band up: 100 ms, like a real one. */
+const KICK_FRAMES = 6;
+
 /** Plays `beats` kicks spaced `periodMs` apart (the first after one period) at 60 fps. */
 const play = (
   periodMs: number,
@@ -51,12 +87,34 @@ const play = (
   const totalMs = periodMs * (beats + 1);
   for (let now = 0; now < totalMs; now += FRAME_MS) {
     const sinceKick = now % periodMs;
-    const kicking = now >= periodMs && sinceKick < FRAME_MS * 3;
+    const kicking = now >= periodMs && sinceKick < FRAME_MS * KICK_FRAMES;
     const frame = detector.update(spectrum(noise, kicking ? kick : 0), now);
     if (frame.beat) detected.push(now);
     peakBass = Math.max(peakBass, frame.bass);
   }
   return { detected, peakBass };
+};
+
+/** Feed a second of flat noise, then soft kicks at 1 s and 1.5 s, so the
+ * next kick is the one that lands in rhythm. Returns its time. */
+const prime = (detector: BeatDetector, noise = 20): number => {
+  for (let now = 0; now < 2_000; now += 16) {
+    const sinceKick = (now - 1_000) % 500;
+    const kicking = now >= 1_000 && sinceKick < 16 * KICK_FRAMES;
+    detector.update(spectrum(noise, kicking ? 60 : 0), now);
+  }
+  return 2_000;
+};
+
+/** Play a hard kick from `start` and return the frame it is heard on (or
+ * the last frame of the kick if it never is). */
+const hit = (detector: BeatDetector, start: number): BeatFrame => {
+  let frame = detector.frame;
+  for (let i = 0; i < KICK_FRAMES; i += 1) {
+    frame = detector.update(spectrum(20, 200), start + i * 16);
+    if (frame.beat) break;
+  }
+  return frame;
 };
 
 describe("createBeatDetector", () => {
@@ -73,11 +131,88 @@ describe("createBeatDetector", () => {
     expect(peak).toBe(0);
   });
 
+  it("keeps a quiet room dark, even at high sensitivity", () => {
+    const detector = createBeatDetector(SAMPLE_RATE, FFT_SIZE);
+    detector.setSensitivity("high");
+    const room = createRoom(60);
+    let beats = 0;
+    let peak = 0;
+    for (let now = 0; now < 20_000; now += FRAME_MS) {
+      const frame = detector.update(room(), now);
+      if (frame.beat) beats += 1;
+      peak = Math.max(
+        peak,
+        frame.bass,
+        frame.mid,
+        frame.high,
+        frame.level,
+        frame.punch,
+        frame.presence,
+      );
+    }
+    expect(beats).toBe(0);
+    expect(peak).toBe(0);
+  });
+
+  it("ignores a couple of bumps in a quiet room", () => {
+    const detector = createBeatDetector(SAMPLE_RATE, FFT_SIZE);
+    const room = createRoom(60);
+    let beats = 0;
+    let presence = 0;
+    for (let now = 0; now < 6_000; now += FRAME_MS) {
+      const bumping =
+        (now >= 2_000 && now < 2_000 + FRAME_MS * KICK_FRAMES) ||
+        (now >= 2_600 && now < 2_600 + FRAME_MS * KICK_FRAMES);
+      const bump = bumping ? 120 : 0;
+      const frame = detector.update(room(bump), now);
+      if (frame.beat) beats += 1;
+      presence = Math.max(presence, frame.presence);
+    }
+    expect(beats).toBe(0);
+    expect(presence).toBe(0);
+  });
+
+  it("opens on the third kick in rhythm and fades after the last", () => {
+    const detector = createBeatDetector(SAMPLE_RATE, FFT_SIZE);
+    const room = createRoom(60);
+    const periodMs = 60_000 / 128;
+    const kicks = [0, 1, 2, 3].map((i) => 2_000 + i * periodMs);
+    const opening = kicks[RHYTHM_ONSETS - 1];
+    const beats: number[] = [];
+    let presenceAtFirst = 0;
+    let presenceDuring = 0;
+    let presenceHeld = 1;
+    let presenceAfter = 1;
+    const lastKick = kicks[kicks.length - 1];
+    for (let now = 0; now < lastKick + 8_000; now += FRAME_MS) {
+      const kicking = kicks.some((at) => now >= at && now < at + FRAME_MS * 6);
+      const frame = detector.update(room(kicking ? 120 : 0), now);
+      if (frame.beat) beats.push(now);
+      if (now < opening)
+        presenceAtFirst = Math.max(presenceAtFirst, frame.presence);
+      if (now > opening + 400 && now < lastKick) {
+        presenceDuring = Math.min(presenceDuring || 1, frame.presence);
+      }
+      if (now > lastKick && now < lastKick + PRESENCE_HOLD_MS) {
+        presenceHeld = Math.min(presenceHeld, frame.presence);
+      }
+      if (now > lastKick + 7_000) {
+        presenceAfter = Math.min(presenceAfter, frame.presence);
+      }
+    }
+    expect(beats.length).toBe(kicks.length - RHYTHM_ONSETS + 1);
+    expect(beats[0]).toBeGreaterThanOrEqual(opening);
+    expect(beats[0]).toBeLessThan(opening + 100);
+    expect(presenceAtFirst).toBe(0);
+    expect(presenceDuring).toBeGreaterThan(0.9);
+    expect(presenceHeld).toBeGreaterThan(0.9);
+    expect(presenceAfter).toBeLessThan(0.02);
+  });
+
   it("calls one beat per kick at a dance tempo", () => {
     const periodMs = 60_000 / 128; // 128 bpm
     const { detected } = play(periodMs, 8);
-    expect(detected.length).toBeGreaterThanOrEqual(7);
-    expect(detected.length).toBeLessThanOrEqual(8);
+    expect(detected.length).toBe(8 - RHYTHM_ONSETS + 1);
     for (let i = 1; i < detected.length; i += 1) {
       expect(detected[i] - detected[i - 1]).toBeGreaterThanOrEqual(
         REFRACTORY_MS,
@@ -88,10 +223,10 @@ describe("createBeatDetector", () => {
 
   it("fills the bass range whether the microphone is quiet or hot", () => {
     const periodMs = 60_000 / 120;
-    const quiet = play(periodMs, 8, 8, 40);
-    const hot = play(periodMs, 8, 200, 55);
-    expect(quiet.detected.length).toBeGreaterThanOrEqual(7);
-    expect(hot.detected.length).toBeGreaterThanOrEqual(7);
+    const quiet = play(periodMs, 8, 8, 100);
+    const hot = play(periodMs, 8, 180, 75);
+    expect(quiet.detected.length).toBeGreaterThanOrEqual(6);
+    expect(hot.detected.length).toBeGreaterThanOrEqual(6);
     expect(quiet.peakBass).toBeGreaterThan(0.8);
     expect(hot.peakBass).toBeGreaterThan(0.8);
   });
@@ -101,17 +236,18 @@ describe("createBeatDetector", () => {
     for (let now = 0; now < 1_000; now += 16) {
       detector.update(tone(20, 0, 0, 0), now);
     }
-    const frame = detector.update(tone(20, 300, 6_000, 120), 1_000);
+    for (let now = 1_000; now < 2_000; now += 16) {
+      const stabbing = (now - 1_000) % 512 === 0;
+      detector.update(tone(20, 300, 6_000, stabbing ? 120 : 0), now);
+    }
+    const frame = detector.update(tone(20, 300, 6_000, 120), 2_000);
     expect(frame.beat).toBe(true);
     expect(frame.strength).toBeGreaterThan(0.3);
   });
 
   it("reports band energies and a strength on the beat", () => {
     const detector = createBeatDetector(SAMPLE_RATE, FFT_SIZE);
-    for (let now = 0; now < 1_000; now += 16) {
-      detector.update(spectrum(20, 0), now);
-    }
-    const frame = detector.update(spectrum(20, 200), 1_000);
+    const frame = hit(detector, prime(detector));
     expect(frame.beat).toBe(true);
     expect(frame.strength).toBeGreaterThan(0.5);
     expect(frame.bass).toBeGreaterThan(frame.high);
@@ -121,13 +257,12 @@ describe("createBeatDetector", () => {
 
   it("kicks the punch envelope on a beat and lets it fall", () => {
     const detector = createBeatDetector(SAMPLE_RATE, FFT_SIZE);
-    for (let now = 0; now < 1_000; now += 16) {
-      detector.update(spectrum(20, 0), now);
-    }
-    const hit = detector.update(spectrum(20, 200), 1_000).punch;
-    expect(hit).toBeGreaterThan(0.9);
-    let punch = hit;
-    for (let now = 1_016; now < 1_600; now += 16) {
+    const start = prime(detector);
+    const struck = hit(detector, start).punch;
+    expect(struck).toBeGreaterThan(0.9);
+    let punch = struck;
+    const landed = start + KICK_FRAMES * 16;
+    for (let now = landed; now < landed + 600; now += 16) {
       const next = detector.update(spectrum(20, 0), now).punch;
       expect(next).toBeLessThan(punch);
       punch = next;
@@ -138,12 +273,12 @@ describe("createBeatDetector", () => {
   it("hears softer kicks at high sensitivity and fewer at low", () => {
     const periodMs = 60_000 / 120;
     const faint = (level: Sensitivity) =>
-      play(periodMs, 8, 20, 18, level).detected.length;
-    expect(faint("medium")).toBe(0);
-    expect(faint("high")).toBeGreaterThanOrEqual(7);
-    const soft = (level: Sensitivity) =>
       play(periodMs, 8, 20, 30, level).detected.length;
-    expect(soft("medium")).toBeGreaterThanOrEqual(7);
+    expect(faint("medium")).toBe(0);
+    expect(faint("high")).toBeGreaterThanOrEqual(6);
+    const soft = (level: Sensitivity) =>
+      play(periodMs, 8, 20, 50, level).detected.length;
+    expect(soft("medium")).toBeGreaterThanOrEqual(6);
     expect(soft("low")).toBe(0);
   });
 
@@ -206,5 +341,20 @@ describe("createSpectrumBands", () => {
     }
     expect(rise).toBeGreaterThan(0.7);
     expect(fall).toBeGreaterThan(rise * 0.4);
+  });
+
+  it("stays dark while the detector hears no music", () => {
+    const bands = createSpectrumBands(SAMPLE_RATE, FFT_SIZE, 8);
+    const room = createRoom(60);
+    let top = 0;
+    for (let i = 0; i < 300; i += 1) {
+      top = Math.max(top, ...bands.update(room(), FRAME_MS, 0));
+    }
+    expect(top).toBe(0);
+    let lit = 0;
+    for (let i = 0; i < 30; i += 1) {
+      lit = Math.max(lit, ...bands.update(room(), FRAME_MS, 1));
+    }
+    expect(lit).toBeGreaterThan(0.5);
   });
 });

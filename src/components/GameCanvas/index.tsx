@@ -700,7 +700,7 @@ export const GameCanvas = ({
       audio.heardMs = now;
       audio.lit = true;
       const frame = detector.update(audio.spectrum, now);
-      const levels = bands.update(audio.spectrum, dtMs);
+      const levels = bands.update(audio.spectrum, dtMs, frame.presence);
       if (frame.beat) {
         const strength = 0.6 + 0.8 * frame.strength;
         if (frame.strength >= CENTER_BEAT_STRENGTH) {
@@ -979,7 +979,6 @@ export const GameCanvas = ({
           RIM_BANDS,
         );
         audio.detector.setSensitivity(sensitivityRef.current);
-        audio.bands.setSensitivity(sensitivityRef.current);
         audio.beatIndex = 0;
         onMusicStatusRef.current("listening");
       })
@@ -1007,7 +1006,6 @@ export const GameCanvas = ({
   useEffect(() => {
     const audio = audioRef.current;
     audio.detector?.setSensitivity(sensitivity);
-    audio.bands?.setSensitivity(sensitivity);
   }, [sensitivity]);
 
   // A new side to stand on: start the swing from wherever the camera is.

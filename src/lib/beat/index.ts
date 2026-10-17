@@ -1,8 +1,9 @@
 import { clamp } from "@/utils/clamp";
 import { smoothstep } from "@/utils/smoothstep";
 import {
-  BAND_SMOOTHING,
   BASS_HZ,
+  ENVELOPE_MAX_STEP_MS,
+  ENVELOPE_MS,
   FLOOR_RISE_MS,
   FLUX_FLOOR,
   FLUX_RATIO,
@@ -11,14 +12,20 @@ import {
   GATE_SPAN_LOW,
   HIGH_HZ,
   HISTORY_FRAMES,
+  KICK_STRENGTH_SCALE,
   LEVEL_SMOOTHING,
   MID_HZ,
   ONSET_FLOOR,
   ONSET_STEP,
   ONSET_SIGMA,
   PEAK_RELEASE_MS,
+  PRESENCE_ATTACK_MS,
+  PRESENCE_HOLD_MS,
+  PRESENCE_RELEASE_MS,
   PUNCH_MS,
   REFRACTORY_MS,
+  RHYTHM_ONSETS,
+  RHYTHM_WINDOW_MS,
   SENSITIVITY_PROFILES,
   SPECTRUM_ATTACK,
   SPECTRUM_HIGH_HZ,
@@ -44,6 +51,7 @@ export const createBeatFrame = (): BeatFrame => ({
   beat: false,
   strength: 0,
   punch: 0,
+  presence: 0,
 });
 
 /** Mean magnitude (0..1) over the bins covering a frequency band. */
@@ -60,28 +68,34 @@ const bandEnergy = (
   return total / ((last - first + 1) * 255);
 };
 
+/** Exponential smoothing toward `next` with time constant `tauMs`. */
+const follow = (prior: number, next: number, dtMs: number, tauMs: number) => {
+  return next + (prior - next) * Math.exp(-dtMs / tauMs);
+};
+
 /**
  * Software auto gain. A phone microphone with its own gain control off can
  * be very quiet, or sit near the analyser's ceiling next to a speaker; in
  * either case the music should fill the range. The peak follows the signal
  * up at once and falls off slowly; the floor creeps up and drops at once.
- * A band whose swing between the two is narrow is room noise and is gated
- * toward zero rather than stretched.
+ * A band whose swing between the two is narrow is not moving and fades
+ * toward zero rather than being stretched. It cannot tell music from
+ * noise, so callers scale the result by the detector's `presence`.
  */
 export const createAutoGain = (): AutoGain => {
   let peak = 0;
   let floor = 1;
 
-  const normalize = (raw: number, dtMs: number, gate = 1): number => {
+  const normalize = (raw: number, dtMs: number): number => {
     peak = Math.max(raw, peak * Math.exp(-dtMs / PEAK_RELEASE_MS));
     floor =
       raw < floor
         ? raw
         : floor + (raw - floor) * (1 - Math.exp(-dtMs / FLOOR_RISE_MS));
     const span = peak - floor;
-    const low = GATE_SPAN_LOW * gate;
-    const high = GATE_SPAN_HIGH * gate;
-    const open = smoothstep((span - low) / (high - low));
+    const open = smoothstep(
+      (span - GATE_SPAN_LOW) / (GATE_SPAN_HIGH - GATE_SPAN_LOW),
+    );
     return clamp(((raw - floor) / Math.max(span, 0.001)) * open, 0, 1);
   };
 
@@ -136,11 +150,13 @@ const createHistory = (length: number) => {
 
 /**
  * An onset detector in the classic energy-vs-history style: a beat is a
- * frame whose bass energy jumps well above its recent average, or whose
+ * frame whose bass envelope jumps well above its recent average, or whose
  * spectral flux (how much of the spectrum just got louder, which catches
  * snares and stabs when the bass is a steady drone) does. A short
- * refractory period makes one kick one beat. `sampleRate` and `fftSize`
- * describe the analyser that produces the spectra.
+ * refractory period makes one kick one beat. Onsets only count as beats
+ * once a few have landed in rhythm, which is also what lifts `presence`;
+ * a lone bump in a quiet room moves nothing.
+ * `sampleRate` and `fftSize` describe the analyser that produces the spectra.
  */
 export const createBeatDetector = (
   sampleRate: number,
@@ -157,7 +173,12 @@ export const createBeatDetector = (
     high: createAutoGain(),
     level: createAutoGain(),
   };
-  let lastBeatMs = -Infinity;
+  /** The smoothed bands the detector reads instead of the jittery raw ones. */
+  const envelope = { bass: 0, mid: 0, high: 0, loudness: 0 };
+  let lastOnsetMs = -Infinity;
+  /** Onsets in a row, each within the rhythm window of the last. */
+  let run = 0;
+  let heardMs = -Infinity;
   let lastMs: number | null = null;
   let profile = SENSITIVITY_PROFILES.medium;
 
@@ -170,7 +191,13 @@ export const createBeatDetector = (
     fluxHistory.reset();
     previous.fill(0);
     for (const gain of Object.values(gains)) gain.reset();
-    lastBeatMs = -Infinity;
+    envelope.bass = 0;
+    envelope.mid = 0;
+    envelope.high = 0;
+    envelope.loudness = 0;
+    lastOnsetMs = -Infinity;
+    run = 0;
+    heardMs = -Infinity;
     lastMs = null;
     Object.assign(frame, createBeatFrame());
   };
@@ -194,64 +221,72 @@ export const createBeatDetector = (
     const bass = bandEnergy(spectrum, binHz, BASS_HZ);
     const mid = bandEnergy(spectrum, binHz, MID_HZ);
     const high = bandEnergy(spectrum, binHz, HIGH_HZ);
-    const loudness = (bass + mid + high) / 3;
     const flux = spectralFlux(spectrum);
+    const stepMs = Math.min(dtMs, ENVELOPE_MAX_STEP_MS);
+    envelope.bass = follow(envelope.bass, bass, stepMs, ENVELOPE_MS);
+    envelope.mid = follow(envelope.mid, mid, stepMs, ENVELOPE_MS);
+    envelope.high = follow(envelope.high, high, stepMs, ENVELOPE_MS);
+    envelope.loudness = (envelope.bass + envelope.mid + envelope.high) / 3;
 
-    const smooth = (prior: number, next: number, keep: number) =>
-      prior * keep + next * (1 - keep);
-    const { gate, onset } = profile;
-    frame.bass = smooth(
-      frame.bass,
-      gains.bass.normalize(bass, dtMs, gate),
-      BAND_SMOOTHING,
-    );
-    frame.mid = smooth(
-      frame.mid,
-      gains.mid.normalize(mid, dtMs, gate),
-      BAND_SMOOTHING,
-    );
-    frame.high = smooth(
-      frame.high,
-      gains.high.normalize(high, dtMs, gate),
-      BAND_SMOOTHING,
-    );
-    frame.level = smooth(
-      frame.level,
-      gains.level.normalize(loudness, dtMs, gate),
-      LEVEL_SMOOTHING,
-    );
-
-    // Compare the raw signals against their histories, then record them.
-    bassHistory.push(bass);
+    // Compare the envelope and the flux against their histories, then
+    // record them.
+    bassHistory.push(envelope.bass);
     fluxHistory.push(flux);
 
+    const { onset } = profile;
+    const mean = bassHistory.mean();
     const kick =
-      bass >= ONSET_FLOOR &&
-      bass > bassHistory.mean() + ONSET_STEP * onset &&
-      bass > bassHistory.mean() + ONSET_SIGMA * onset * bassHistory.deviation();
+      envelope.bass >= ONSET_FLOOR &&
+      envelope.bass > mean + ONSET_STEP * onset &&
+      envelope.bass > mean + ONSET_SIGMA * onset * bassHistory.deviation();
     const stab =
       flux >= FLUX_FLOOR * onset &&
       flux > fluxHistory.mean() * (1 + (FLUX_RATIO - 1) * onset) &&
       flux > fluxHistory.mean() + FLUX_SIGMA * onset * fluxHistory.deviation();
     const ready = bassHistory.ready();
-    const rested = nowMs - lastBeatMs >= REFRACTORY_MS;
+    const rested = nowMs - lastOnsetMs >= REFRACTORY_MS;
 
     frame.punch *= Math.exp(-dtMs / PUNCH_MS);
+    frame.beat = false;
+    frame.strength = 0;
     if (ready && rested && (kick || stab)) {
-      lastBeatMs = nowMs;
-      frame.beat = true;
-      const kickStrength = kick
-        ? (bass - bassHistory.mean()) / Math.max(bassHistory.mean(), 0.05)
-        : 0;
-      const stabStrength = stab
-        ? (flux - fluxHistory.mean()) / Math.max(fluxHistory.mean() * 3, 0.03)
-        : 0;
-      frame.strength = clamp(Math.max(kickStrength, stabStrength), 0, 1);
-      frame.punch = Math.max(frame.punch, 0.6 + 0.4 * frame.strength);
-    } else {
-      frame.beat = false;
-      frame.strength = 0;
+      run = nowMs - lastOnsetMs <= RHYTHM_WINDOW_MS ? run + 1 : 1;
+      lastOnsetMs = nowMs;
+      const inRhythm =
+        run >= RHYTHM_ONSETS || nowMs - heardMs <= PRESENCE_HOLD_MS;
+      if (inRhythm) {
+        heardMs = nowMs;
+        frame.beat = true;
+        const kickStrength = kick
+          ? ((envelope.bass - mean) * KICK_STRENGTH_SCALE) /
+            Math.max(mean, 0.05)
+          : 0;
+        const stabStrength = stab
+          ? (flux - fluxHistory.mean()) / Math.max(fluxHistory.mean() * 3, 0.03)
+          : 0;
+        frame.strength = clamp(Math.max(kickStrength, stabStrength), 0, 1);
+        frame.punch = Math.max(frame.punch, 0.6 + 0.4 * frame.strength);
+      }
     }
+
+    const present = nowMs - heardMs <= PRESENCE_HOLD_MS ? 1 : 0;
+    frame.presence = follow(
+      frame.presence,
+      present,
+      dtMs,
+      present > frame.presence ? PRESENCE_ATTACK_MS : PRESENCE_RELEASE_MS,
+    );
+    if (frame.presence < 0.001) frame.presence = 0;
+
+    const { presence } = frame;
+    frame.bass = gains.bass.normalize(envelope.bass, dtMs) * presence;
+    frame.mid = gains.mid.normalize(envelope.mid, dtMs) * presence;
+    frame.high = gains.high.normalize(envelope.high, dtMs) * presence;
+    frame.level =
+      frame.level * LEVEL_SMOOTHING +
+      gains.level.normalize(envelope.loudness, dtMs) *
+        presence *
+        (1 - LEVEL_SMOOTHING);
     return frame;
   };
 
@@ -283,20 +318,18 @@ export const createSpectrumBands = (
     gains.push(createAutoGain());
   }
 
-  let gate = SENSITIVITY_PROFILES.medium.gate;
-
-  const setSensitivity = (level: Sensitivity) => {
-    gate = SENSITIVITY_PROFILES[level].gate;
-  };
-
-  const update = (spectrum: Uint8Array, dtMs: number): Float32Array => {
+  const update = (
+    spectrum: Uint8Array,
+    dtMs: number,
+    presence = 1,
+  ): Float32Array => {
     for (let band = 0; band < count; band += 1) {
       const first = firstBin[band];
       const last = Math.min(lastBin[band], spectrum.length - 1);
       let total = 0;
       for (let bin = first; bin <= last; bin += 1) total += spectrum[bin];
       const raw = last >= first ? total / ((last - first + 1) * 255) : 0;
-      const target = gains[band].normalize(raw, dtMs, gate);
+      const target = gains[band].normalize(raw, dtMs) * presence;
       const keep = target > levels[band] ? SPECTRUM_ATTACK : SPECTRUM_RELEASE;
       levels[band] = levels[band] * keep + target * (1 - keep);
     }
@@ -308,5 +341,5 @@ export const createSpectrumBands = (
     for (const gain of gains) gain.reset();
   };
 
-  return { update, levels, setSensitivity, reset };
+  return { update, levels, reset };
 };
